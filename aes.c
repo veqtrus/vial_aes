@@ -71,12 +71,6 @@ static const uint8_t rcon[11] = { 0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40
 		(dst).words[3] ^= (src).words[3]; \
 	} while (0)
 
-#ifdef ASM_INTEL_AES
-int vial_intel_aes_supported(void);
-void vial_intel_aes_encrypt(void *blk, const void *keys, unsigned rounds);
-void vial_intel_aes_decrypt(void *blk, const void *keys, unsigned rounds);
-#endif
-
 static void expand_keys(uint32_t *w, unsigned n, unsigned r)
 {
 	uint8_t *p;
@@ -106,12 +100,6 @@ static void aes_encrypt(union vial_aes_block *restrict blk, const union vial_aes
 {
 	union vial_aes_block tblk[4];
 	unsigned i, j, r;
-#ifdef ASM_INTEL_AES
-	if (vial_intel_aes_supported()) {
-		vial_intel_aes_encrypt(blk, keys, rounds);
-		return;
-	}
-#endif
 	for (r = 0; ; ++r) {
 		/* AddRoundKey */
 		BXOR(*blk, keys[r]);
@@ -143,12 +131,6 @@ static void aes_decrypt(union vial_aes_block *restrict blk, const union vial_aes
 {
 	union vial_aes_block tblk[4];
 	unsigned i, j, r;
-#ifdef ASM_INTEL_AES
-	if (vial_intel_aes_supported()) {
-		vial_intel_aes_decrypt(blk, keys, rounds);
-		return;
-	}
-#endif
 	/* AddRoundKey */
 	BXOR(*blk, keys[rounds]);
 	for (r = rounds - 1; ; --r) {
