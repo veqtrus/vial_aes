@@ -71,6 +71,17 @@ static const uint8_t rcon[11] = { 0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40
 		(dst).words[3] ^= (src).words[3]; \
 	} while (0)
 
+static void incr_counter(union vial_aes_block *counter)
+{
+	unsigned i = sizeof(counter->bytes);
+	do {
+		--i;
+		++(counter->bytes[i]);
+		if (counter->bytes[i] != 0)
+			break;
+	} while (i != 0);
+}
+
 static void expand_keys(uint32_t *w, unsigned n, unsigned r)
 {
 	uint8_t *p;
@@ -163,88 +174,65 @@ void vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode,
 	self->mode = mode;
 	self->rounds = keybits / 32 + 6;
 	memcpy(&self->keys[0], key, keybits / 8);
-	if (iv != NULL)
+	if (iv == NULL)
+		memset(&self->iv, 0, VIAL_AES_BLOCK_SIZE);
+	else
 		memcpy(&self->iv, iv, VIAL_AES_BLOCK_SIZE);
 	expand_keys(self->keys[0].words, keybits / 32, self->rounds + 1);
 }
 
 void vial_aes_encrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len)
 {
-	union vial_aes_block blk;
-	switch (self->mode) {
-	case VIAL_AES_MODE_ECB:
-		while (len >= VIAL_AES_BLOCK_SIZE) {
-			memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
+	union vial_aes_block blk, pad;
+	while (len >= VIAL_AES_BLOCK_SIZE) {
+		memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
+		switch (self->mode) {
+		case VIAL_AES_MODE_ECB:
 			aes_encrypt(&blk, self->keys, self->rounds);
-			memcpy(dst, &blk, VIAL_AES_BLOCK_SIZE);
-			src += VIAL_AES_BLOCK_SIZE;
-			dst += VIAL_AES_BLOCK_SIZE;
-			len -= VIAL_AES_BLOCK_SIZE;
-		}
-		break;
-	case VIAL_AES_MODE_CBC:
-		while (len >= VIAL_AES_BLOCK_SIZE) {
-			memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
+			break;
+		case VIAL_AES_MODE_CBC:
 			BXOR(blk, self->iv);
 			aes_encrypt(&blk, self->keys, self->rounds);
 			self->iv = blk;
-			memcpy(dst, &blk, VIAL_AES_BLOCK_SIZE);
-			src += VIAL_AES_BLOCK_SIZE;
-			dst += VIAL_AES_BLOCK_SIZE;
-			len -= VIAL_AES_BLOCK_SIZE;
+			break;
+		case VIAL_AES_MODE_CTR:
+			pad = self->iv;
+			aes_encrypt(&pad, self->keys, self->rounds);
+			BXOR(blk, pad);
+			incr_counter(&self->iv);
+			break;
 		}
-		break;
-	case VIAL_AES_MODE_CFB:
-		while (len >= VIAL_AES_BLOCK_SIZE) {
-			aes_encrypt(&self->iv, self->keys, self->rounds);
-			memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
-			BXOR(self->iv, blk);
-			memcpy(dst, &self->iv, VIAL_AES_BLOCK_SIZE);
-			src += VIAL_AES_BLOCK_SIZE;
-			dst += VIAL_AES_BLOCK_SIZE;
-			len -= VIAL_AES_BLOCK_SIZE;
-		}
-		break;
+		memcpy(dst, &blk, VIAL_AES_BLOCK_SIZE);
+		src += VIAL_AES_BLOCK_SIZE;
+		dst += VIAL_AES_BLOCK_SIZE;
+		len -= VIAL_AES_BLOCK_SIZE;
 	}
 }
 
 void vial_aes_decrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len)
 {
-	union vial_aes_block blk;
-	switch (self->mode) {
-	case VIAL_AES_MODE_ECB:
-		while (len >= VIAL_AES_BLOCK_SIZE) {
-			memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
+	union vial_aes_block blk, pad;
+	while (len >= VIAL_AES_BLOCK_SIZE) {
+		memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
+		switch (self->mode) {
+		case VIAL_AES_MODE_ECB:
 			aes_decrypt(&blk, self->keys, self->rounds);
-			memcpy(dst, &blk, VIAL_AES_BLOCK_SIZE);
-			src += VIAL_AES_BLOCK_SIZE;
-			dst += VIAL_AES_BLOCK_SIZE;
-			len -= VIAL_AES_BLOCK_SIZE;
-		}
-		break;
-	case VIAL_AES_MODE_CBC:
-		while (len >= VIAL_AES_BLOCK_SIZE) {
-			memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
+			break;
+		case VIAL_AES_MODE_CBC:
 			aes_decrypt(&blk, self->keys, self->rounds);
 			BXOR(blk, self->iv);
 			memcpy(&self->iv, src, VIAL_AES_BLOCK_SIZE);
-			memcpy(dst, &blk, VIAL_AES_BLOCK_SIZE);
-			src += VIAL_AES_BLOCK_SIZE;
-			dst += VIAL_AES_BLOCK_SIZE;
-			len -= VIAL_AES_BLOCK_SIZE;
+			break;
+		case VIAL_AES_MODE_CTR:
+			pad = self->iv;
+			aes_encrypt(&pad, self->keys, self->rounds);
+			BXOR(blk, pad);
+			incr_counter(&self->iv);
+			break;
 		}
-		break;
-	case VIAL_AES_MODE_CFB:
-		while (len >= VIAL_AES_BLOCK_SIZE) {
-			aes_encrypt(&self->iv, self->keys, self->rounds);
-			memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
-			BXOR(self->iv, blk);
-			memcpy(dst, &self->iv, VIAL_AES_BLOCK_SIZE);
-			self->iv = blk;
-			src += VIAL_AES_BLOCK_SIZE;
-			dst += VIAL_AES_BLOCK_SIZE;
-			len -= VIAL_AES_BLOCK_SIZE;
-		}
-		break;
+		memcpy(dst, &blk, VIAL_AES_BLOCK_SIZE);
+		src += VIAL_AES_BLOCK_SIZE;
+		dst += VIAL_AES_BLOCK_SIZE;
+		len -= VIAL_AES_BLOCK_SIZE;
 	}
 }

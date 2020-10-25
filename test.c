@@ -41,6 +41,18 @@ static const struct testcase testcases[] = {
 		"73bed6b8e3c1743b7116e69e22229516"
 		"3ff1caa1681fac09120eca307586e1a7",
 		"000102030405060708090a0b0c0d0e0f"
+	}, {
+		VIAL_AES_MODE_CTR,
+		"2b7e151628aed2a6abf7158809cf4f3c",
+		"6bc1bee22e409f96e93d7e117393172a"
+		"ae2d8a571e03ac9c9eb76fac45af8e51"
+		"30c81c46a35ce411e5fbc1191a0a52ef"
+		"f69f2445df4f9b17ad2b417be66c3710",
+		"874d6191b620e3261bef6864990db6ce"
+		"9806f66b7970fdff8617187bb9fffdff"
+		"5ae4df3edbd5d35e5b4f09020db03eab"
+		"1e031dda2fbe03d1792170a0f3009cee",
+		"f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
 	}, { 0 }
 };
 
@@ -89,29 +101,29 @@ static int test_aes(const struct testcase *test)
 		mode = "ECB"; break;
 	case VIAL_AES_MODE_CBC:
 		mode = "CBC"; break;
-	case VIAL_AES_MODE_CFB:
-		mode = "CFB"; break;
+	case VIAL_AES_MODE_CTR:
+		mode = "CTR"; break;
 	default:
-		code = -1;
+		code = 1;
 		goto exit;
 	}
 	if (key == NULL || plain == NULL || cipher == NULL) {
 		puts("Failed decoding test case");
-		code = -1;
+		code = 1;
 		goto exit;
 	}
 	vial_aes_init(&aes, test->mode, key_size * 8, key, iv);
 	vial_aes_encrypt(&aes, result, plain, data_size);
 	if (memcmp(cipher, result, data_size)) {
 		printf("AES %s failed encrypting %s\n", mode, test->plain);
-		code = -2;
+		code = 2;
 		goto exit;
 	}
 	vial_aes_init(&aes, test->mode, key_size * 8, key, iv);
 	vial_aes_decrypt(&aes, result, cipher, data_size);
 	if (memcmp(plain, result, data_size)) {
 		printf("AES %s failed decrypting %s\n", mode, test->cipher);
-		code = -3;
+		code = 3;
 		goto exit;
 	}
 exit:

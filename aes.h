@@ -21,7 +21,7 @@ extern "C" {
 enum vial_aes_mode {
 	VIAL_AES_MODE_ECB,
 	VIAL_AES_MODE_CBC,
-	VIAL_AES_MODE_CFB
+	VIAL_AES_MODE_CTR
 };
 
 union vial_aes_block {
@@ -32,7 +32,7 @@ union vial_aes_block {
 struct vial_aes {
 	enum vial_aes_mode mode;
 	unsigned rounds;
-    union vial_aes_block iv;
+	union vial_aes_block iv;
 	union vial_aes_block keys[15];
 };
 
