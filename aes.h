@@ -18,6 +18,13 @@ https://www.boost.org/LICENSE_1_0.txt
 extern "C" {
 #endif
 
+enum vial_aes_error {
+	VIAL_AES_ERROR_NONE,
+	VIAL_AES_ERROR_LENGTH,
+	VIAL_AES_ERROR_IV,
+	VIAL_AES_ERROR_MAC
+};
+
 enum vial_aes_mode {
 	VIAL_AES_MODE_ECB,
 	VIAL_AES_MODE_CBC,
@@ -31,17 +38,17 @@ union vial_aes_block {
 
 struct vial_aes {
 	enum vial_aes_mode mode;
-	unsigned rounds;
-	union vial_aes_block iv;
+	unsigned rounds, pad_rem;
+	union vial_aes_block iv, pad;
 	union vial_aes_block keys[15];
 };
 
-void vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode,
+enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode,
 	unsigned keybits, const uint8_t *key, const uint8_t *iv);
 
-void vial_aes_encrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len);
+enum vial_aes_error vial_aes_encrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len);
 
-void vial_aes_decrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len);
+enum vial_aes_error vial_aes_decrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len);
 
 #ifdef __cplusplus
 }
