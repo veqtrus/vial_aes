@@ -30,6 +30,18 @@ static const struct testcase testcases[] = {
 		"43b1cd7f598ece23881b00e3ed030688"
 		"7b0c785e27e8ad3f8223207104725dd4"
 	}, {
+		VIAL_AES_MODE_ECB,
+		"8e73b0f7da0e6452c810f32b809079e562"
+		"f8ead2522c6b7b",
+		"6bc1bee22e409f96e93d7e117393172a",
+		"bd334f1d6e45f25ff712a214571fa5cc"
+	}, {
+		VIAL_AES_MODE_ECB,
+		"603deb1015ca71be2b73aef0857d7781"
+		"1f352c073b6108d72d9810a30914dff4",
+		"6bc1bee22e409f96e93d7e117393172a",
+		"f3eed1bdb5d2a03c064b5a7e3db181f8"
+	}, {
 		VIAL_AES_MODE_CBC,
 		"2b7e151628aed2a6abf7158809cf4f3c",
 		"6bc1bee22e409f96e93d7e117393172a"
