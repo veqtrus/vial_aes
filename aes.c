@@ -167,18 +167,34 @@ static void aes_decrypt(union vial_aes_block *restrict blk, const union vial_aes
 
 static void aes_ctr_pad(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len)
 {
-	while (len > 0) {
-		if (self->pad_rem == 0) {
+	union vial_aes_block blk;
+	for (;;) {
+		while (len > 0 && self->pad_rem > 0) {
+			*dst = *src ^ self->pad.bytes[VIAL_AES_BLOCK_SIZE - self->pad_rem];
+			self->pad_rem--;
+			len--;
+			src++;
+			dst++;
+		}
+		while (len >= VIAL_AES_BLOCK_SIZE) {
 			self->pad = self->iv;
 			aes_encrypt(&self->pad, self->keys, self->rounds);
 			incr_counter(&self->iv);
-			self->pad_rem = VIAL_AES_BLOCK_SIZE;
+			memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
+			BXOR(blk, self->pad);
+			memcpy(dst, &blk, VIAL_AES_BLOCK_SIZE);
+			len -= VIAL_AES_BLOCK_SIZE;
+			src += VIAL_AES_BLOCK_SIZE;
+			dst += VIAL_AES_BLOCK_SIZE;
 		}
-		*dst = *src ^ self->pad.bytes[VIAL_AES_BLOCK_SIZE - self->pad_rem];
-		self->pad_rem--;
-		len--;
-		src++;
-		dst++;
+		if (len > 0) {
+			self->pad = self->iv;
+			self->pad_rem = VIAL_AES_BLOCK_SIZE;
+			aes_encrypt(&self->pad, self->keys, self->rounds);
+			incr_counter(&self->iv);
+		} else {
+			return;
+		}
 	}
 }
 
