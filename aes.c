@@ -220,13 +220,26 @@ static enum vial_aes_error cbcmac_tag(const struct vial_aes *self, uint8_t *dst,
 	if (self->auth_data_len < 0xFF00) {
 		blk.bytes[0] = self->auth_data_len >> 8;
 		blk.bytes[1] = self->auth_data_len & 255;
+		i = 2;
+	} else if (self->auth_data_len <= 0xFFFFFFFF) {
+		blk.bytes[0] = 0xFF;
+		blk.bytes[1] = 0xFE;
+		tmp_len = self->auth_data_len;
+		blk.bytes[5] = tmp_len & 255;
+		tmp_len >>= 8;
+		blk.bytes[4] = tmp_len & 255;
+		tmp_len >>= 8;
+		blk.bytes[3] = tmp_len & 255;
+		tmp_len >>= 8;
+		blk.bytes[2] = tmp_len & 255;
+		i = 6;
 	} else {
 		return VIAL_AES_ERROR_LENGTH;
 	}
-	tmp_len = VIAL_AES_BLOCK_SIZE - 2;
+	tmp_len = VIAL_AES_BLOCK_SIZE - i;
 	if (self->auth_data_len < tmp_len)
 		tmp_len = self->auth_data_len;
-	memcpy(blk.bytes + 2, self->auth_data, tmp_len);
+	memcpy(blk.bytes + i, self->auth_data, tmp_len);
 	BXOR(tag, blk);
 	aes_encrypt(&tag, self->keys, self->rounds);
 	cbcmac(self, &tag, self->auth_data + tmp_len, self->auth_data_len - tmp_len);
