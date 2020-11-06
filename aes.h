@@ -39,7 +39,8 @@ union vial_aes_block {
 
 struct vial_aes {
 	enum vial_aes_mode mode;
-	unsigned rounds, pad_rem, counter_len, tag_len, auth_data_len;
+	unsigned rounds, pad_rem, counter_len, tag_len;
+	size_t auth_data_len;
 	const uint8_t *auth_data;
 	union vial_aes_block iv, pad;
 	union vial_aes_block keys[15];
