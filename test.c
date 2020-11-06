@@ -14,7 +14,7 @@ https://www.boost.org/LICENSE_1_0.txt
 
 struct testcase {
 	enum vial_aes_mode mode;
-	const char *key, *plain, *cipher, *iv;
+	const char *key, *plain, *cipher, *iv, *auth;
 };
 
 static const struct testcase testcases[] = {
@@ -65,6 +65,15 @@ static const struct testcase testcases[] = {
 		"5ae4df3edbd5d35e5b4f09020db03eab"
 		"1e031dda2fbe03d1792170a0f3009cee",
 		"f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+	}, { /* RFC 3610 vector 1 */
+		VIAL_AES_MODE_CCM,
+		"C0C1C2C3C4C5C6C7C8C9CACBCCCDCECF",
+		"08090A0B0C0D0E0F1011121314151617"
+		"18191A1B1C1D1E",
+		"588C979A61C663D2F066D0C2C0F98980"
+		"6D5F6B61DAC38417E8D12CFDF926E0",
+		"00000000000003020100A0A1A2A3A4A5",
+		"0001020304050607"
 	}, { 0 }
 };
 
@@ -95,19 +104,29 @@ static uint8_t *decode_hex(const char *src)
 	return result;
 }
 
+static void print_hex(const uint8_t *src, size_t len)
+{
+	const uint8_t *end = src + len;
+	for (; src < end; ++src)
+		printf("%02X", *src);
+}
+
 static int test_aes(const struct testcase *test)
 {
 	struct vial_aes aes;
 	const char *mode;
-	uint8_t *key, *plain, *cipher, *iv, *result;
+	uint8_t *key, *plain, *cipher, *iv, *auth, *result;
 	const size_t key_size = strlen(test->key) / 2,
-		data_size = strlen(test->plain) / 2;
+		plain_size = strlen(test->plain) / 2,
+		cipher_size = strlen(test->cipher) / 2,
+		auth_size = test->auth != NULL ? strlen(test->auth) / 2 : 0;
 	int code = 0;
 	key = decode_hex(test->key);
 	plain = decode_hex(test->plain);
 	cipher = decode_hex(test->cipher);
 	iv = decode_hex(test->iv);
-	result = malloc(data_size);
+	auth = decode_hex(test->auth);
+	result = malloc(cipher_size > plain_size ? cipher_size : plain_size);
 	switch (test->mode) {
 	case VIAL_AES_MODE_ECB:
 		mode = "ECB"; break;
@@ -115,27 +134,45 @@ static int test_aes(const struct testcase *test)
 		mode = "CBC"; break;
 	case VIAL_AES_MODE_CTR:
 		mode = "CTR"; break;
+	case VIAL_AES_MODE_CCM:
+		mode = "CCM"; break;
 	default:
-		code = 1;
+		code = 31;
 		goto exit;
 	}
 	if (key == NULL || plain == NULL || cipher == NULL) {
 		puts("Failed decoding test case");
-		code = 1;
+		code = 31;
 		goto exit;
 	}
 	vial_aes_init(&aes, test->mode, key_size * 8, key, iv);
-	vial_aes_encrypt(&aes, result, plain, data_size);
-	if (memcmp(cipher, result, data_size)) {
+	aes.counter_len = 2;
+	aes.tag_len = 8;
+	aes.auth_data_len = auth_size;
+	aes.auth_data = auth;
+	code = vial_aes_encrypt(&aes, result, plain, plain_size);
+	if (code) goto exit;
+	if (memcmp(cipher, result, cipher_size)) {
 		printf("AES %s failed encrypting %s\n", mode, test->plain);
-		code = 2;
+		printf("  got ");
+		print_hex(result, cipher_size);
+		printf("\n  exp %s\n", test->cipher);
+		code = 32;
 		goto exit;
 	}
 	vial_aes_init(&aes, test->mode, key_size * 8, key, iv);
-	vial_aes_decrypt(&aes, result, cipher, data_size);
-	if (memcmp(plain, result, data_size)) {
+	aes.counter_len = 2;
+	aes.tag_len = 8;
+	aes.auth_data_len = auth_size;
+	aes.auth_data = auth;
+	code = vial_aes_decrypt(&aes, result, cipher, plain_size);
+	if (code) goto exit;
+	if (memcmp(plain, result, plain_size)) {
 		printf("AES %s failed decrypting %s\n", mode, test->cipher);
-		code = 3;
+		printf("  got ");
+		print_hex(result, cipher_size);
+		printf("\n  exp %s\n", test->plain);
+		code = 33;
 		goto exit;
 	}
 exit:
@@ -143,6 +180,7 @@ exit:
 	free(plain);
 	free(cipher);
 	free(iv);
+	free(auth);
 	free(result);
 	return code;
 }

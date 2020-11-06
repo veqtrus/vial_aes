@@ -168,23 +168,6 @@ static void aes_decrypt(union vial_aes_block *restrict blk, const union vial_aes
 	*blk = tblk[0];
 }
 
-enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode,
-	unsigned keybits, const uint8_t *key, const uint8_t *iv)
-{
-	self->mode = mode;
-	self->rounds = keybits / 32 + 6;
-	memcpy(&self->keys[0], key, keybits / 8);
-	if (iv == NULL) {
-		if (mode != VIAL_AES_MODE_ECB)
-			return VIAL_AES_ERROR_IV;
-		memset(&self->iv, 0, VIAL_AES_BLOCK_SIZE);
-	} else {
-		memcpy(&self->iv, iv, VIAL_AES_BLOCK_SIZE);
-	}
-	expand_keys(self->keys[0].words, keybits / 32, self->rounds + 1);
-	return VIAL_AES_ERROR_NONE;
-}
-
 static void aes_pad_ctr(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len)
 {
 	while (len > 0) {
@@ -202,10 +185,107 @@ static void aes_pad_ctr(struct vial_aes *self, uint8_t *dst, const uint8_t *src,
 	}
 }
 
+static void cbcmac(const struct vial_aes *self, union vial_aes_block *mac, const uint8_t *data, size_t len)
+{
+	union vial_aes_block blk;
+	while (len >= VIAL_AES_BLOCK_SIZE) {
+		memcpy(&blk, data, VIAL_AES_BLOCK_SIZE);
+		BXOR(*mac, blk);
+		aes_encrypt(mac, self->keys, self->rounds);
+		len -= VIAL_AES_BLOCK_SIZE;
+		data += VIAL_AES_BLOCK_SIZE;
+	}
+	if (len > 0) {
+		memset(&blk, 0, VIAL_AES_BLOCK_SIZE);
+		memcpy(&blk, data, len);
+		BXOR(*mac, blk);
+		aes_encrypt(mac, self->keys, self->rounds);
+	}
+}
+
+static enum vial_aes_error cbcmac_tag(const struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len)
+{
+	size_t i, tmp_len;
+	union vial_aes_block tag = {{0}}, blk = {{0}};
+	/* set flags */
+	tag.bytes[0] = (self->auth_data_len > 0 ? 64 : 0) +
+		8 * (self->tag_len / 2 - 1) + (self->counter_len - 1);
+	/* set counter */
+	tmp_len = len;
+	for (i = 0; i < self->counter_len; ++i) {
+		tag.bytes[VIAL_AES_BLOCK_SIZE - 1 - i] = tmp_len & 255;
+		tmp_len >>= 8;
+	}
+	if (tmp_len > 0)
+		return VIAL_AES_ERROR_LENGTH;
+	memcpy(tag.bytes + 1, self->iv.bytes + self->counter_len + 1, VIAL_AES_BLOCK_SIZE - 1 - self->counter_len);
+	aes_encrypt(&tag, self->keys, self->rounds);
+	if (self->auth_data_len < 0xFF00) {
+		blk.bytes[0] = self->auth_data_len >> 8;
+		blk.bytes[1] = self->auth_data_len & 255;
+	} else {
+		return VIAL_AES_ERROR_LENGTH;
+	}
+	tmp_len = VIAL_AES_BLOCK_SIZE - 2;
+	if (self->auth_data_len < tmp_len)
+		tmp_len = self->auth_data_len;
+	memcpy(blk.bytes + 2, self->auth_data, tmp_len);
+	BXOR(tag, blk);
+	aes_encrypt(&tag, self->keys, self->rounds);
+	cbcmac(self, &tag, self->auth_data + tmp_len, self->auth_data_len - tmp_len);
+	cbcmac(self, &tag, src, len);
+	memcpy(dst, &tag, self->tag_len);
+	return VIAL_AES_ERROR_NONE;
+}
+
+static void aes_ccm_set_counter(struct vial_aes *self)
+{
+	const union vial_aes_block old_iv = self->iv;
+	self->pad_rem = 0;
+	memset(&self->iv, 0, sizeof(self->iv));
+	self->iv.bytes[0] = self->counter_len - 1;
+	memcpy(self->iv.bytes + 1, old_iv.bytes + self->counter_len + 1, VIAL_AES_BLOCK_SIZE - 1 - self->counter_len);
+}
+
+enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode,
+	unsigned keybits, const uint8_t *key, const uint8_t *iv)
+{
+	self->mode = mode;
+	self->rounds = keybits / 32 + 6;
+	self->pad_rem = 0;
+	self->counter_len = 4;
+	self->tag_len = 16;
+	self->auth_data_len = 0;
+	self->auth_data = NULL;
+	memcpy(&self->keys[0], key, keybits / 8);
+	if (iv == NULL) {
+		if (mode != VIAL_AES_MODE_ECB)
+			return VIAL_AES_ERROR_IV;
+		memset(&self->iv, 0, VIAL_AES_BLOCK_SIZE);
+	} else {
+		memcpy(&self->iv, iv, VIAL_AES_BLOCK_SIZE);
+	}
+	expand_keys(self->keys[0].words, keybits / 32, self->rounds + 1);
+	return VIAL_AES_ERROR_NONE;
+}
+
 enum vial_aes_error vial_aes_encrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len)
 {
 	union vial_aes_block blk;
-	if (self->mode == VIAL_AES_MODE_CTR) {
+	enum vial_aes_error err;
+	if (self->mode == VIAL_AES_MODE_CCM) {
+		err = cbcmac_tag(self, dst + len, src, len);
+		if (err != VIAL_AES_ERROR_NONE)
+			return err;
+		blk = self->iv; /* save iv */
+		aes_ccm_set_counter(self);
+		aes_pad_ctr(self, dst + len, dst + len, self->tag_len); /* first encrypt tag */
+		self->pad_rem = 0;
+		aes_pad_ctr(self, dst, src, len);
+		self->iv = blk; /* restore iv */
+		self->pad_rem = 0;
+		incr_counter(&self->iv);
+	} else if (self->mode == VIAL_AES_MODE_CTR) {
 		aes_pad_ctr(self, dst, src, len);
 	} else {
 		if (len % VIAL_AES_BLOCK_SIZE != 0)
@@ -230,8 +310,23 @@ enum vial_aes_error vial_aes_encrypt(struct vial_aes *self, uint8_t *dst, const 
 
 enum vial_aes_error vial_aes_decrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len)
 {
-	union vial_aes_block blk;
-	if (self->mode == VIAL_AES_MODE_CTR) {
+	union vial_aes_block blk, tag_a, tag_b;
+	enum vial_aes_error err;
+	if (self->mode == VIAL_AES_MODE_CCM) {
+		blk = self->iv; /* save iv */
+		aes_ccm_set_counter(self);
+		aes_pad_ctr(self, tag_a.bytes, dst + len, self->tag_len); /* first decrypt tag */
+		self->pad_rem = 0;
+		aes_pad_ctr(self, dst, src, len);
+		self->iv = blk; /* restore iv */
+		self->pad_rem = 0;
+		err = cbcmac_tag(self, tag_b.bytes, dst, len);
+		if (err != VIAL_AES_ERROR_NONE)
+			return err;
+		if (memcmp(&tag_a, &tag_b, self->tag_len))
+			return VIAL_AES_ERROR_MAC;
+		incr_counter(&self->iv);
+	} else if (self->mode == VIAL_AES_MODE_CTR) {
 		aes_pad_ctr(self, dst, src, len);
 	} else {
 		if (len % VIAL_AES_BLOCK_SIZE != 0)

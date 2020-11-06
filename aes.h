@@ -28,7 +28,8 @@ enum vial_aes_error {
 enum vial_aes_mode {
 	VIAL_AES_MODE_ECB,
 	VIAL_AES_MODE_CBC,
-	VIAL_AES_MODE_CTR
+	VIAL_AES_MODE_CTR,
+	VIAL_AES_MODE_CCM
 };
 
 union vial_aes_block {
@@ -38,7 +39,8 @@ union vial_aes_block {
 
 struct vial_aes {
 	enum vial_aes_mode mode;
-	unsigned rounds, pad_rem;
+	unsigned rounds, pad_rem, counter_len, tag_len, auth_data_len;
+	const uint8_t *auth_data;
 	union vial_aes_block iv, pad;
 	union vial_aes_block keys[15];
 };
