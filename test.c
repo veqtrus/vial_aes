@@ -12,12 +12,14 @@ https://www.boost.org/LICENSE_1_0.txt
 
 #include "aes.h"
 
-struct testcase {
+struct aes_testcase {
 	enum vial_aes_mode mode;
-	const char *key, *plain, *cipher, *iv, *auth;
+	const char *key, *plain, *cipher, *iv;
 };
 
-static const struct testcase testcases[] = {
+/* SP 800-38A - Recommendation for Block Cipher Modes of Operation: Methods and Techniques */
+
+static const struct aes_testcase aes_testcases[] = {
 	{
 		VIAL_AES_MODE_ECB,
 		"2b7e151628aed2a6abf7158809cf4f3c",
@@ -31,8 +33,8 @@ static const struct testcase testcases[] = {
 		"7b0c785e27e8ad3f8223207104725dd4"
 	}, {
 		VIAL_AES_MODE_ECB,
-		"8e73b0f7da0e6452c810f32b809079e562"
-		"f8ead2522c6b7b",
+		"8e73b0f7da0e6452c810f32b809079e5"
+		"62f8ead2522c6b7b",
 		"6bc1bee22e409f96e93d7e117393172a",
 		"bd334f1d6e45f25ff712a214571fa5cc"
 	}, {
@@ -65,15 +67,36 @@ static const struct testcase testcases[] = {
 		"5ae4df3edbd5d35e5b4f09020db03eab"
 		"1e031dda2fbe03d1792170a0f3009cee",
 		"f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
-	}, { /* RFC 3610 vector 1 */
-		VIAL_AES_MODE_CCM,
-		"C0C1C2C3C4C5C6C7C8C9CACBCCCDCECF",
-		"08090A0B0C0D0E0F1011121314151617"
-		"18191A1B1C1D1E",
-		"588C979A61C663D2F066D0C2C0F98980"
-		"6D5F6B61DAC38417E8D12CFDF926E0",
-		"00000000000003020100A0A1A2A3A4A5",
-		"0001020304050607"
+	}, { 0 }
+};
+
+struct cmac_testcase {
+	const char *key, *msg, *tag;
+};
+
+/* SP 800-38B - Recommendation for Block Cipher Modes of Operation: The CMAC Mode for Authentication */
+
+static const struct cmac_testcase cmac_testcases[] = {
+	{
+		"2B7E151628AED2A6ABF7158809CF4F3C",
+		"",
+		"BB1D6929E95937287FA37D129B756746"
+	}, {
+		"2B7E151628AED2A6ABF7158809CF4F3C",
+		"6BC1BEE22E409F96E93D7E117393172A",
+		"070A16B46B4D4144F79BDD9DD04A287C"
+	}, {
+		"2B7E151628AED2A6ABF7158809CF4F3C",
+		"6BC1BEE22E409F96E93D7E117393172A"
+		"AE2D8A57",
+		"7D85449EA6EA19C823A7BF78837DFADE"
+	}, {
+		"2B7E151628AED2A6ABF7158809CF4F3C",
+		"6BC1BEE22E409F96E93D7E117393172A"
+		"AE2D8A571E03AC9C9EB76FAC45AF8E51"
+		"30C81C46A35CE411E5FBC1191A0A52EF"
+		"F69F2445DF4F9B17AD2B417BE66C3710",
+		"51F0BEBF7E3B9D92FC49741779363CFE"
 	}, { 0 }
 };
 
@@ -111,21 +134,19 @@ static void print_hex(const uint8_t *src, size_t len)
 		printf("%02X", *src);
 }
 
-static int test_aes(const struct testcase *test)
-{
+static int test_aes(const struct aes_testcase *test)
+{	struct vial_aes_key aes_key;
 	struct vial_aes aes;
 	const char *mode;
-	uint8_t *key, *plain, *cipher, *iv, *auth, *result;
+	uint8_t *key, *plain, *cipher, *iv, *result;
 	const size_t key_size = strlen(test->key) / 2,
 		plain_size = strlen(test->plain) / 2,
-		cipher_size = strlen(test->cipher) / 2,
-		auth_size = test->auth != NULL ? strlen(test->auth) / 2 : 0;
+		cipher_size = strlen(test->cipher) / 2;
 	int code = 0;
 	key = decode_hex(test->key);
 	plain = decode_hex(test->plain);
 	cipher = decode_hex(test->cipher);
 	iv = decode_hex(test->iv);
-	auth = decode_hex(test->auth);
 	result = malloc(cipher_size > plain_size ? cipher_size : plain_size);
 	switch (test->mode) {
 	case VIAL_AES_MODE_ECB:
@@ -134,8 +155,6 @@ static int test_aes(const struct testcase *test)
 		mode = "CBC"; break;
 	case VIAL_AES_MODE_CTR:
 		mode = "CTR"; break;
-	case VIAL_AES_MODE_CCM:
-		mode = "CCM"; break;
 	default:
 		code = 31;
 		goto exit;
@@ -145,11 +164,8 @@ static int test_aes(const struct testcase *test)
 		code = 31;
 		goto exit;
 	}
-	vial_aes_init(&aes, test->mode, key_size * 8, key, iv);
-	aes.counter_len = 2;
-	aes.tag_len = 8;
-	aes.auth_data_len = auth_size;
-	aes.auth_data = auth;
+	vial_aes_key_init(&aes_key, key_size * 8, key);
+	vial_aes_init(&aes, test->mode, &aes_key, iv);
 	code = vial_aes_encrypt(&aes, result, plain, plain_size);
 	if (code) goto exit;
 	if (memcmp(cipher, result, cipher_size)) {
@@ -160,11 +176,7 @@ static int test_aes(const struct testcase *test)
 		code = 32;
 		goto exit;
 	}
-	vial_aes_init(&aes, test->mode, key_size * 8, key, iv);
-	aes.counter_len = 2;
-	aes.tag_len = 8;
-	aes.auth_data_len = auth_size;
-	aes.auth_data = auth;
+	vial_aes_init(&aes, test->mode, &aes_key, iv);
 	code = vial_aes_decrypt(&aes, result, cipher, plain_size);
 	if (code) goto exit;
 	if (memcmp(plain, result, plain_size)) {
@@ -180,7 +192,41 @@ exit:
 	free(plain);
 	free(cipher);
 	free(iv);
-	free(auth);
+	free(result);
+	return code;
+}
+
+static int test_cmac(const struct cmac_testcase *test)
+{
+	struct vial_aes_key aes_key;
+	struct vial_aes_cmac cmac;
+	const size_t key_size = strlen(test->key) / 2,
+		msg_size = strlen(test->msg) / 2,
+		tag_size = strlen(test->tag) / 2;
+	uint8_t *key, *msg, *tag, *result;
+	int code = 0;
+	key = decode_hex(test->key);
+	msg = decode_hex(test->msg);
+	tag = decode_hex(test->tag);
+	result = malloc(tag_size);
+	if (key == NULL || msg == NULL || tag == NULL) {
+		puts("Failed decoding test case");
+		code = 31;
+		goto exit;
+	}
+	vial_aes_key_init(&aes_key, key_size * 8, key);
+	vial_aes_cmac_init(&cmac, &aes_key);
+	vial_aes_cmac_update(&cmac, msg, msg_size);
+	vial_aes_cmac_finish(&cmac, result, tag_size);
+	if (memcmp(tag, result, tag_size)) {
+		printf("AES CMAC failed on message %s\n", test->msg);
+		code = 32;
+		goto exit;
+	}
+exit:
+	free(key);
+	free(msg);
+	free(tag);
 	free(result);
 	return code;
 }
@@ -188,10 +234,15 @@ exit:
 int main()
 {
 	int err;
-	for (const struct testcase *test = testcases; test->key; ++test) {
+	for (const struct aes_testcase *test = aes_testcases; test->key; ++test) {
 		err = test_aes(test);
 		if (err) return err;
 	}
-	puts("AES passed tests");
+	puts("AES encryption/decryption OK");
+	for (const struct cmac_testcase *test = cmac_testcases; test->key; ++test) {
+		err = test_cmac(test);
+		if (err) return err;
+	}
+	puts("AES CMAC OK");
 	return 0;
 }
