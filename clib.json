@@ -1,0 +1,10 @@
+{
+	"name": "vial_aes",
+	"version": "0.1.0",
+	"repo": "veqtrus/vial_aes",
+	"description": "Permissively licensed AES implementation in C with ECB, CBC, CTR, and EAX modes of operation, as well as CMAC (OMAC1)",
+	"keywords": ["aes", "encryption", "cmac", "omac"],
+	"license": "BSL-1.0",
+	"dependencies": {},
+	"src": ["README.md", "LICENSE_1_0.txt", "aes.h", "aes.c"]
+}
