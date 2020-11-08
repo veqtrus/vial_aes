@@ -1,4 +1,4 @@
-/*
+/* SPDX-License-Identifier: BSL-1.0
 Copyright (c) 2020 Pavlos Georgiou
 
 Distributed under the Boost Software License, Version 1.0.
@@ -296,14 +296,30 @@ static int test_eax(const struct eax_testcase *test)
 	vial_aes_key_init(&aes_key, key_size * 8, key);
 	vial_aes_init_eax(&aes, &cmac, &aes_key, nonce, nonce_size);
 	vial_aes_auth_data(&aes, auth, auth_size);
-	vial_aes_encrypt(&aes, result, plain, plain_size);
-	vial_aes_get_tag(&aes, result + plain_size);
+	code = vial_aes_encrypt(&aes, result, plain, plain_size);
+	if (code) goto exit;
+	code = vial_aes_get_tag(&aes, result + plain_size);
+	if (code) goto exit;
 	if (memcmp(cipher, result, cipher_size)) {
 		printf("AES EAX failed encrypting %s\n", test->plain);
 		printf("  got ");
 		print_hex(result, cipher_size);
 		printf("\n  exp %s\n", test->cipher);
 		code = 32;
+		goto exit;
+	}
+	vial_aes_init_eax(&aes, &cmac, &aes_key, nonce, nonce_size);
+	vial_aes_auth_data(&aes, auth, auth_size);
+	code = vial_aes_decrypt(&aes, result, cipher, plain_size);
+	if (code) goto exit;
+	code = vial_aes_check_tag(&aes, cipher + plain_size);
+	if (code) goto exit;
+	if (memcmp(plain, result, plain_size)) {
+		printf("AES EAX failed decrypting %s\n", test->cipher);
+		printf("  got ");
+		print_hex(result, plain_size);
+		printf("\n  exp %s\n", test->plain);
+		code = 33;
 		goto exit;
 	}
 exit:
