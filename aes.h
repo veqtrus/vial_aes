@@ -1,4 +1,4 @@
-/*
+/* SPDX-License-Identifier: BSL-1.0
 Copyright (c) 2020 Pavlos Georgiou
 
 Distributed under the Boost Software License, Version 1.0.
@@ -19,20 +19,26 @@ extern "C" {
 #endif
 
 enum vial_aes_error {
-	VIAL_AES_ERROR_NONE = 0,
-	VIAL_AES_ERROR_LENGTH,
-	VIAL_AES_ERROR_IV,
-	VIAL_AES_ERROR_MAC,
-	VIAL_AES_ERROR_CIPHER
+	VIAL_AES_ERROR_NONE = 0, /**< No error */
+	VIAL_AES_ERROR_LENGTH, /**< Input of invalid length */
+	VIAL_AES_ERROR_IV, /**< IV missing when required or does not meet requirements */
+	VIAL_AES_ERROR_MAC, /**< Message authentication failed */
+	VIAL_AES_ERROR_CIPHER /**< Operation not valid for selected cipher mode */
 };
 
+/**
+ * Block cipher mode of operation
+ */
 enum vial_aes_mode {
-	VIAL_AES_MODE_ECB,
-	VIAL_AES_MODE_CBC,
-	VIAL_AES_MODE_CTR,
-	VIAL_AES_MODE_EAX
+	VIAL_AES_MODE_ECB, /**< Encrypts each block independently, should generally not be used */
+	VIAL_AES_MODE_CBC, /**< Provides confidentiality but not integrity, data must be padded */
+	VIAL_AES_MODE_CTR, /**< Stream-cipher-like mode, does not check integrity */
+	VIAL_AES_MODE_EAX /**< Recommended mode, as it provides confidentiality and integrity */
 };
 
+/**
+ * Increments a big-endian integer by one
+ */
 void vial_aes_increment_be(uint8_t *num, size_t len);
 
 union vial_aes_block {
@@ -40,29 +46,59 @@ union vial_aes_block {
 	uint32_t words[VIAL_AES_BLOCK_SIZE / 4];
 };
 
+/**
+ * Represents an expanded AES key
+ */
 struct vial_aes_key {
 	union vial_aes_block key_exp[15];
 	unsigned rounds;
 };
 
+/**
+ * Encrypts a single AES block in-place.
+ * Should not be called directly unless as part of a more elaborate scheme.
+ */
 void vial_aes_block_encrypt(union vial_aes_block *blk, const struct vial_aes_key *key);
 
+/**
+ * Decrypts a single AES block in-place.
+ * Should not be called directly unless as part of a more elaborate scheme.
+ */
 void vial_aes_block_decrypt(union vial_aes_block *blk, const struct vial_aes_key *key);
 
+/**
+ * Stores the state/context for computing a CMAC (OMAC1) tag
+ */
 struct vial_aes_cmac {
 	const struct vial_aes_key *key;
 	union vial_aes_block mac, buf;
 	unsigned buf_len;
 };
 
+/**
+ * Initialises the CMAC state
+ */
 void vial_aes_cmac_init(struct vial_aes_cmac *self, const struct vial_aes_key *key);
 
+/**
+ * Processes data for authentication
+ */
 void vial_aes_cmac_update(struct vial_aes_cmac *self, const uint8_t *src, size_t len);
 
+/**
+ * Finalises computing the authentication tag
+ */
 void vial_aes_cmac_final(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_len);
 
+/**
+ * Computes a CMAC(OMAC1) tag for the given data.
+ * Prvided for convenience when a small amount of data needs to be authentaicated.
+ */
 void vial_aes_cmac_tag(const struct vial_aes_key *key, uint8_t *tag, size_t tag_len, const uint8_t *src, size_t len);
 
+/**
+ * Stores the state/context for performing AES encryption/decryption
+ */
 struct vial_aes {
 	enum vial_aes_mode mode;
 	unsigned pad_rem;
@@ -71,21 +107,54 @@ struct vial_aes {
 	struct vial_aes_cmac *cmac;
 };
 
+/**
+ * Initialises a key structure.
+ * Accepted key lengths are 128, 192, 256 bits.
+ */
 enum vial_aes_error vial_aes_key_init(struct vial_aes_key *self, unsigned keybits, const uint8_t *key);
 
+/**
+ * Initialises AES encryption/decryption state.
+ * For EAX mode use `vial_aes_init_eax()`.
+ * A unique 16 byte initialisation vector (IV) is required for CTR mode.
+ * A random IV is required for CBC mode.
+ */
 enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode, const struct vial_aes_key *key, const uint8_t *iv);
 
+/**
+ * Initialises AES encryption/decryption state for EAX mode.
+ * A CMAC state must be provided for use by the authenticated encryption algorithm (will be initialised internally).
+ * A unique nonce must be provided for each new message, e.g. by incrementing a randomly initialised counter.
+ */
 enum vial_aes_error vial_aes_init_eax(struct vial_aes *self, struct vial_aes_cmac *cmac,
 	const struct vial_aes_key *key, const uint8_t *nonce, size_t len);
 
+/**
+ * Sets the associated data to be authenticated alongside the encrypted message.
+ * Must be provided after each reinitialisation, before encryption/decryption.
+ */
 enum vial_aes_error vial_aes_auth_data(struct vial_aes *self, const uint8_t *src, size_t len);
 
+/**
+ * Encrypts (part of) a message
+ */
 enum vial_aes_error vial_aes_encrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len);
 
+/**
+ * Decrypts (part of) a message
+ */
 enum vial_aes_error vial_aes_decrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len);
 
+/**
+ * Computes the authentication tag for the processed message.
+ * Further data will be authenticated separately.
+ */
 enum vial_aes_error vial_aes_get_tag(struct vial_aes *self, uint8_t *tag);
 
+/**
+ * Verifies the authentication tag for the processed message.
+ * Further data will be authenticated separately.
+ */
 enum vial_aes_error vial_aes_check_tag(struct vial_aes *self, const uint8_t *tag);
 
 #ifdef __cplusplus
