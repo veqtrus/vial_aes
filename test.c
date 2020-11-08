@@ -100,6 +100,40 @@ static const struct cmac_testcase cmac_testcases[] = {
 	}, { 0 }
 };
 
+struct eax_testcase {
+	const char *key, *plain, *cipher, *nonce, *auth;
+};
+
+/* Bellare M., Rogaway P., Wagner D. (2004) The EAX Mode of Operation */
+
+static const struct eax_testcase eax_testcases[] = {
+	{
+		"233952DEE4D5ED5F9B9C6D6FF80FF478",
+		"",
+		"E037830E8389F27B025A2D6527E79D01",
+		"62EC67F9C3A4A407FCB2A8C49031A8B3",
+		"6BFB914FD07EAE6B"
+	}, {
+		"91945D3F4DCBEE0BF45EF52255F095A4",
+		"F7FB",
+		"19DD5C4C9331049D0BDAB0277408F67967E5",
+		"BECAF043B0A23D843194BA972C66DEBD",
+		"FA3BFD4806EB53FA"
+	}, {
+		"5FFF20CAFAB119CA2FC73549E20F5B0D",
+		"1BDA122BCE8A8DBAF1877D962B8592DD2D56",
+		"2EC47B2C4954A489AFC7BA4897EDCDAE8CC33B60450599BD02C96382902AEF7F832A",
+		"DDE59B97D722156D4D9AFF2BC7559826",
+		"54B9F04E6A09189A"
+	}, {
+		"8395FCF1E95BEBD697BD010BC766AAC3",
+		"CA40D7446E545FFAED3BD12A740A659FFBBB3CEAB7",
+		"CB8920F87A6C75CFF39627B56E3ED197C552D295A7CFC46AFC253B4652B1AF3795B124AB6E",
+		"22E7ADD93CFC6393C57EC0B3C17D6B44",
+		"126735FCC320D25A"
+	}, { 0 }
+};
+
 static uint8_t *decode_hex(const char *src)
 {
 	if (src == NULL)
@@ -216,7 +250,12 @@ static int test_cmac(const struct cmac_testcase *test)
 	}
 	vial_aes_key_init(&aes_key, key_size * 8, key);
 	vial_aes_cmac_init(&cmac, &aes_key);
-	vial_aes_cmac_update(&cmac, msg, msg_size);
+	if (msg_size < 19) {
+		vial_aes_cmac_update(&cmac, msg, msg_size);
+	} else { /* test partial updates */
+		vial_aes_cmac_update(&cmac, msg, 19);
+		vial_aes_cmac_update(&cmac, msg + 19, msg_size - 19);
+	}
 	vial_aes_cmac_finish(&cmac, result, tag_size);
 	if (memcmp(tag, result, tag_size)) {
 		printf("AES CMAC failed on message %s\n", test->msg);
@@ -227,6 +266,52 @@ exit:
 	free(key);
 	free(msg);
 	free(tag);
+	free(result);
+	return code;
+}
+
+static int test_eax(const struct eax_testcase *test)
+{
+	struct vial_aes_key aes_key;
+	struct vial_aes_cmac cmac;
+	struct vial_aes aes;
+	uint8_t *key, *plain, *cipher, *nonce, *auth, *result;
+	const size_t key_size = strlen(test->key) / 2,
+		plain_size = strlen(test->plain) / 2,
+		cipher_size = strlen(test->cipher) / 2,
+		nonce_size = strlen(test->nonce) / 2,
+		auth_size = strlen(test->auth) / 2;
+	int code = 0;
+	key = decode_hex(test->key);
+	plain = decode_hex(test->plain);
+	cipher = decode_hex(test->cipher);
+	nonce = decode_hex(test->nonce);
+	auth = decode_hex(test->auth);
+	result = malloc(cipher_size > plain_size ? cipher_size : plain_size);
+	if (key == NULL || plain == NULL || cipher == NULL || nonce == NULL || auth == NULL) {
+		puts("Failed decoding test case");
+		code = 31;
+		goto exit;
+	}
+	vial_aes_key_init(&aes_key, key_size * 8, key);
+	vial_aes_init_eax(&aes, &cmac, &aes_key, nonce, nonce_size);
+	vial_aes_auth_data(&aes, auth, auth_size);
+	vial_aes_encrypt(&aes, result, plain, plain_size);
+	vial_aes_get_tag(&aes, result + plain_size);
+	if (memcmp(cipher, result, cipher_size)) {
+		printf("AES EAX failed encrypting %s\n", test->plain);
+		printf("  got ");
+		print_hex(result, cipher_size);
+		printf("\n  exp %s\n", test->cipher);
+		code = 32;
+		goto exit;
+	}
+exit:
+	free(key);
+	free(plain);
+	free(cipher);
+	free(nonce);
+	free(auth);
 	free(result);
 	return code;
 }
@@ -244,5 +329,10 @@ int main()
 		if (err) return err;
 	}
 	puts("AES CMAC OK");
+	for (const struct eax_testcase *test = eax_testcases; test->key; ++test) {
+		err = test_eax(test);
+		if (err) return err;
+	}
+	puts("AES EAX OK");
 	return 0;
 }
