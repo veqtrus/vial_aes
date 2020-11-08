@@ -59,7 +59,9 @@ void vial_aes_cmac_init(struct vial_aes_cmac *self, const struct vial_aes_key *k
 
 void vial_aes_cmac_update(struct vial_aes_cmac *self, const uint8_t *src, size_t len);
 
-void vial_aes_cmac_finish(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_len);
+void vial_aes_cmac_final(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_len);
+
+void vial_aes_cmac_tag(const struct vial_aes_key *key, uint8_t *tag, size_t tag_len, const uint8_t *src, size_t len);
 
 struct vial_aes {
 	enum vial_aes_mode mode;

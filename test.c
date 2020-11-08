@@ -249,14 +249,14 @@ static int test_cmac(const struct cmac_testcase *test)
 		goto exit;
 	}
 	vial_aes_key_init(&aes_key, key_size * 8, key);
-	vial_aes_cmac_init(&cmac, &aes_key);
 	if (msg_size < 19) {
-		vial_aes_cmac_update(&cmac, msg, msg_size);
+		vial_aes_cmac_tag(&aes_key, result, tag_size, msg, msg_size);
 	} else { /* test partial updates */
+		vial_aes_cmac_init(&cmac, &aes_key);
 		vial_aes_cmac_update(&cmac, msg, 19);
 		vial_aes_cmac_update(&cmac, msg + 19, msg_size - 19);
+		vial_aes_cmac_final(&cmac, result, tag_size);
 	}
-	vial_aes_cmac_finish(&cmac, result, tag_size);
 	if (memcmp(tag, result, tag_size)) {
 		printf("AES CMAC failed on message %s\n", test->msg);
 		code = 32;

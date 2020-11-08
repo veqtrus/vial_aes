@@ -219,7 +219,7 @@ void vial_aes_cmac_update(struct vial_aes_cmac *self, const uint8_t *src, size_t
 	memcpy(&self->buf, src, len);
 }
 
-void vial_aes_cmac_finish(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_len)
+void vial_aes_cmac_final(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_len)
 {
 	union vial_aes_block k0 = {{0}}, k1, k2;
 	vial_aes_block_encrypt(&k0, self->key);
@@ -239,6 +239,14 @@ void vial_aes_cmac_finish(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_l
 	self->buf_len = 0;
 	memset(&self->mac, 0, VIAL_AES_BLOCK_SIZE);
 	memset(&self->buf, 0, VIAL_AES_BLOCK_SIZE);
+}
+
+void vial_aes_cmac_tag(const struct vial_aes_key *key, uint8_t *tag, size_t tag_len, const uint8_t *src, size_t len)
+{
+	struct vial_aes_cmac cmac;
+	vial_aes_cmac_init(&cmac, key);
+	vial_aes_cmac_update(&cmac, src, len);
+	vial_aes_cmac_final(&cmac, tag, tag_len);
 }
 
 static void aes_ctr_pad(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len)
@@ -310,7 +318,7 @@ enum vial_aes_error vial_aes_init_eax(struct vial_aes *self, struct vial_aes_cma
 	vial_aes_cmac_init(cmac, key);
 	vial_aes_cmac_update(self->cmac, blk.bytes, VIAL_AES_BLOCK_SIZE);
 	vial_aes_cmac_update(self->cmac, nonce, len);
-	vial_aes_cmac_finish(self->cmac, self->iv.bytes, VIAL_AES_BLOCK_SIZE);
+	vial_aes_cmac_final(self->cmac, self->iv.bytes, VIAL_AES_BLOCK_SIZE);
 	return vial_aes_auth_data(self, NULL, 0);
 }
 
@@ -323,7 +331,7 @@ enum vial_aes_error vial_aes_auth_data(struct vial_aes *self, const uint8_t *src
 	vial_aes_cmac_init(self->cmac, self->key);
 	vial_aes_cmac_update(self->cmac, blk.bytes, VIAL_AES_BLOCK_SIZE);
 	vial_aes_cmac_update(self->cmac, src, len);
-	vial_aes_cmac_finish(self->cmac, self->auth.bytes, VIAL_AES_BLOCK_SIZE);
+	vial_aes_cmac_final(self->cmac, self->auth.bytes, VIAL_AES_BLOCK_SIZE);
 	block_xor(&self->auth, &self->iv);
 	blk.bytes[VIAL_AES_BLOCK_SIZE - 1] = 2;
 	vial_aes_cmac_update(self->cmac, blk.bytes, VIAL_AES_BLOCK_SIZE);
@@ -407,7 +415,7 @@ enum vial_aes_error vial_aes_get_tag(struct vial_aes *self, uint8_t *tag)
 	union vial_aes_block blk;
 	if (self->mode != VIAL_AES_MODE_EAX)
 		return VIAL_AES_ERROR_CIPHER;
-	vial_aes_cmac_finish(self->cmac, blk.bytes, VIAL_AES_BLOCK_SIZE);
+	vial_aes_cmac_final(self->cmac, blk.bytes, VIAL_AES_BLOCK_SIZE);
 	block_xor(&blk, &self->auth);
 	memcpy(tag, &blk, VIAL_AES_BLOCK_SIZE);
 	return VIAL_AES_ERROR_NONE;
