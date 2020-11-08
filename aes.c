@@ -1,4 +1,4 @@
-/*
+/* SPDX-License-Identifier: BSL-1.0
 Copyright (c) 2020 Pavlos Georgiou
 
 Distributed under the Boost Software License, Version 1.0.
@@ -310,31 +310,38 @@ enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode
 enum vial_aes_error vial_aes_init_eax(struct vial_aes *self, struct vial_aes_cmac *cmac,
 	const struct vial_aes_key *key, const uint8_t *nonce, size_t len)
 {
-	union vial_aes_block blk = {{0}};
+	const uint8_t zeros[VIAL_AES_BLOCK_SIZE] = {0};
 	self->mode = VIAL_AES_MODE_EAX;
 	self->pad_rem = 0;
 	self->key = key;
 	self->cmac = cmac;
 	vial_aes_cmac_init(cmac, key);
-	vial_aes_cmac_update(self->cmac, blk.bytes, VIAL_AES_BLOCK_SIZE);
+	vial_aes_cmac_update(self->cmac, zeros, VIAL_AES_BLOCK_SIZE);
 	vial_aes_cmac_update(self->cmac, nonce, len);
 	vial_aes_cmac_final(self->cmac, self->iv.bytes, VIAL_AES_BLOCK_SIZE);
 	return vial_aes_auth_data(self, NULL, 0);
 }
 
+static void eax_init_mac(struct vial_aes *self)
+{
+	uint8_t blk[VIAL_AES_BLOCK_SIZE] = {0};
+	blk[VIAL_AES_BLOCK_SIZE - 1] = 2;
+	vial_aes_cmac_init(self->cmac, self->key);
+	vial_aes_cmac_update(self->cmac, blk, VIAL_AES_BLOCK_SIZE);
+}
+
 enum vial_aes_error vial_aes_auth_data(struct vial_aes *self, const uint8_t *src, size_t len)
 {
-	union vial_aes_block blk = {{0}};
+	uint8_t blk[VIAL_AES_BLOCK_SIZE] = {0};
 	if (self->mode != VIAL_AES_MODE_EAX)
 		return VIAL_AES_ERROR_CIPHER;
-	blk.bytes[VIAL_AES_BLOCK_SIZE - 1] = 1;
+	blk[VIAL_AES_BLOCK_SIZE - 1] = 1;
 	vial_aes_cmac_init(self->cmac, self->key);
-	vial_aes_cmac_update(self->cmac, blk.bytes, VIAL_AES_BLOCK_SIZE);
+	vial_aes_cmac_update(self->cmac, blk, VIAL_AES_BLOCK_SIZE);
 	vial_aes_cmac_update(self->cmac, src, len);
 	vial_aes_cmac_final(self->cmac, self->auth.bytes, VIAL_AES_BLOCK_SIZE);
 	block_xor(&self->auth, &self->iv);
-	blk.bytes[VIAL_AES_BLOCK_SIZE - 1] = 2;
-	vial_aes_cmac_update(self->cmac, blk.bytes, VIAL_AES_BLOCK_SIZE);
+	eax_init_mac(self);
 	return VIAL_AES_ERROR_NONE;
 }
 
@@ -418,6 +425,7 @@ enum vial_aes_error vial_aes_get_tag(struct vial_aes *self, uint8_t *tag)
 	vial_aes_cmac_final(self->cmac, blk.bytes, VIAL_AES_BLOCK_SIZE);
 	block_xor(&blk, &self->auth);
 	memcpy(tag, &blk, VIAL_AES_BLOCK_SIZE);
+	eax_init_mac(self);
 	return VIAL_AES_ERROR_NONE;
 }
 
