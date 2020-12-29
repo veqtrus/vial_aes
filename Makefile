@@ -9,15 +9,19 @@ SOURCES := aes.c
 
 .PHONY: all clean check
 
-all: test
+all: build/test build/bench
 
 clean:
-	rm -f test *.o
+	rm -f build/* *.o
 
-check: test
-	./test
+check: build/test build/bench
+	build/test
+	build/bench
 
-test: test.c $(SOURCES)
-	$(CC) -o $@ $^ $(CFLAGS)
+build:
+	mkdir -p build
+
+build/%: %.c $(SOURCES) build
+	$(CC) -o $@ $< $(SOURCES) $(CFLAGS)
 
 aes.c: aes.h

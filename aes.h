@@ -41,8 +41,7 @@ enum vial_aes_mode {
  */
 void vial_aes_increment_be(uint8_t *num, size_t len);
 
-union vial_aes_block {
-	uint8_t bytes[VIAL_AES_BLOCK_SIZE];
+struct vial_aes_block {
 	uint32_t words[VIAL_AES_BLOCK_SIZE / 4];
 };
 
@@ -50,7 +49,7 @@ union vial_aes_block {
  * Represents an expanded AES key
  */
 struct vial_aes_key {
-	union vial_aes_block key_exp[15];
+	struct vial_aes_block key_exp[15];
 	unsigned rounds;
 };
 
@@ -58,20 +57,20 @@ struct vial_aes_key {
  * Encrypts a single AES block in-place.
  * Should not be called directly unless as part of a more elaborate scheme.
  */
-void vial_aes_block_encrypt(union vial_aes_block *blk, const struct vial_aes_key *key);
+void vial_aes_block_encrypt(struct vial_aes_block *blk, const struct vial_aes_key *key);
 
 /**
  * Decrypts a single AES block in-place.
  * Should not be called directly unless as part of a more elaborate scheme.
  */
-void vial_aes_block_decrypt(union vial_aes_block *blk, const struct vial_aes_key *key);
+void vial_aes_block_decrypt(struct vial_aes_block *blk, const struct vial_aes_key *key);
 
 /**
  * Stores the state/context for computing a CMAC (OMAC1) tag
  */
 struct vial_aes_cmac {
 	const struct vial_aes_key *key;
-	union vial_aes_block mac, buf;
+	struct vial_aes_block mac, buf;
 	unsigned buf_len;
 };
 
@@ -103,7 +102,7 @@ struct vial_aes {
 	enum vial_aes_mode mode;
 	unsigned pad_rem;
 	const struct vial_aes_key *key;
-	union vial_aes_block iv, pad, auth;
+	struct vial_aes_block iv, pad, auth;
 	struct vial_aes_cmac *cmac;
 };
 
