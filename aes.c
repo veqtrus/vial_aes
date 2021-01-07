@@ -54,18 +54,8 @@ static const uint8_t rsbox[256] = {
 	m = (x1 & 0x80808080) >> 7; /* get msb */ \
 	x2 = (x1 & 0x7F7F7F7F) << 1; \
 	/* xor with 0x1B if msb set */ \
-	m |= m << 1; \
-	m |= m << 3; \
+	m += m << 1; m += m << 3; \
 	x2 ^= m
-
-#define READ_BE32(r, b) \
-	r = (b)[0]; \
-	r <<= 8; \
-	r |= (b)[1]; \
-	r <<= 8; \
-	r |= (b)[2]; \
-	r <<= 8; \
-	r |= (b)[3]
 
 static void block_xor(struct vial_aes_block *dst, const struct vial_aes_block *src)
 {
@@ -75,8 +65,17 @@ static void block_xor(struct vial_aes_block *dst, const struct vial_aes_block *s
 	dst->words[3] ^= src->words[3];
 }
 
+static void transpose16(uint8_t *dst, const uint8_t *src)
+{
+	unsigned i, j;
+	for (i = 0; i < 4; ++i)
+		for (j = 0; j < 4; ++j)
+			dst[i * 4 + j] = src[j * 4 + i];
+}
+
 static void expand_keys(uint32_t *w, unsigned n, unsigned r)
 {
+	uint8_t blk[VIAL_AES_BLOCK_SIZE];
 	uint8_t *p;
 	unsigned i;
 	uint8_t c = 1;
@@ -100,14 +99,16 @@ static void expand_keys(uint32_t *w, unsigned n, unsigned r)
 			w[i] = w[i - n] ^ w[i - 1];
 		}
 	}
+	for (p = (uint8_t *) w, i = 0; i < r; ++i, p += VIAL_AES_BLOCK_SIZE) {
+		memcpy(blk, p, VIAL_AES_BLOCK_SIZE);
+		transpose16(p, blk);
+	}
 }
 
 void vial_aes_increment_be(uint8_t *num, size_t len)
 {
 	if (len == 0) return;
-	do {
-		--len;
-	} while (++(num[len]) == 0 && len != 0);
+	do --len; while (++(num[len]) == 0 && len != 0);
 }
 
 static void incr_counter(struct vial_aes_block *counter)
@@ -129,8 +130,10 @@ void vial_aes_block_encrypt(struct vial_aes_block *blk, const struct vial_aes_ke
 	struct vial_aes_block tblk;
 	uint8_t *blk_bytes = (uint8_t *) blk;
 	uint8_t *tblk_bytes = (uint8_t *) &tblk;
-	uint32_t m, x1, x2;
+	uint32_t m, a1, b1, c1, d1, a2, b2, c2, d2;
 	unsigned i, j, r;
+	transpose16(tblk_bytes, blk_bytes);
+	*blk = tblk;
 	for (r = 0; ; ++r) {
 		/* AddRoundKey */
 		block_xor(blk, &key->key_exp[r]);
@@ -138,36 +141,26 @@ void vial_aes_block_encrypt(struct vial_aes_block *blk, const struct vial_aes_ke
 		/* ShiftRows */
 		for (i = 0; i < 4; ++i)
 			for (j = 0; j < 4; ++j)
-				tblk_bytes[4 * i + j] = sbox[blk_bytes[4 * ((i + j) & 3) + j]];
+				tblk_bytes[4 * i + j] = sbox[blk_bytes[4 * i + ((i + j) & 3)]];
 		if (r == key->rounds - 1)
 			break;
 		/* MixColumns */
-		for (i = 0; i < 4; ++i) {
-			READ_BE32(x1, tblk_bytes + 4 * i);
-			GDBL4(x2, x1, m);
-			m = (x2 & 0xFFFF0000) ^ (x1 & 0x00FFFFFF); /* 2 3 1 1 */
-			m ^= m >> 16;
-			m ^= m >> 8;
-			blk_bytes[4 * i + 0] = m;
-			m = (x2 & 0x00FFFF00) ^ (x1 & 0xFF00FFFF); /* 1 2 3 1 */
-			m ^= m >> 16;
-			m ^= m >> 8;
-			blk_bytes[4 * i + 1] = m;
-			m = (x2 & 0x0000FFFF) ^ (x1 & 0xFFFF00FF); /* 1 1 2 3 */
-			m ^= m >> 16;
-			m ^= m >> 8;
-			blk_bytes[4 * i + 2] = m;
-			m = (x2 & 0xFF0000FF) ^ (x1 & 0xFFFFFF00); /* 3 1 1 2 */
-			m ^= m >> 16;
-			m ^= m >> 8;
-			blk_bytes[4 * i + 3] = m;
-		}
+		a1 = tblk.words[0];
+		b1 = tblk.words[1];
+		c1 = tblk.words[2];
+		d1 = tblk.words[3];
+		GDBL4(a2, a1, m);
+		GDBL4(b2, b1, m);
+		GDBL4(c2, c1, m);
+		GDBL4(d2, d1, m);
+		blk->words[0] = a2 ^ b2 ^ b1 ^ c1 ^ d1; /* 2 3 1 1 */
+		blk->words[1] = a1 ^ b2 ^ c2 ^ c1 ^ d1; /* 1 2 3 1 */
+		blk->words[2] = a1 ^ b1 ^ c2 ^ d2 ^ d1; /* 1 1 2 3 */
+		blk->words[3] = a2 ^ a1 ^ b1 ^ c1 ^ d2; /* 3 1 1 2 */
 	}
 	/* AddRoundKey */
-	blk->words[0] = tblk.words[0] ^ key->key_exp[key->rounds].words[0];
-	blk->words[1] = tblk.words[1] ^ key->key_exp[key->rounds].words[1];
-	blk->words[2] = tblk.words[2] ^ key->key_exp[key->rounds].words[2];
-	blk->words[3] = tblk.words[3] ^ key->key_exp[key->rounds].words[3];
+	block_xor(&tblk, &key->key_exp[key->rounds]);
+	transpose16(blk_bytes, tblk_bytes);
 }
 
 void vial_aes_block_decrypt(struct vial_aes_block *blk, const struct vial_aes_key *key)
@@ -175,8 +168,10 @@ void vial_aes_block_decrypt(struct vial_aes_block *blk, const struct vial_aes_ke
 	struct vial_aes_block tblk;
 	uint8_t *blk_bytes = (uint8_t *) blk;
 	uint8_t *tblk_bytes = (uint8_t *) &tblk;
-	uint32_t m, x1, x2, x4, x8;
+	uint32_t m, a1, b1, c1, d1, a2, b2, c2, d2, a4, b4, c4, d4, a8, b8, c8, d8;
 	unsigned i, j, r;
+	transpose16(tblk_bytes, blk_bytes);
+	*blk = tblk;
 	/* AddRoundKey */
 	block_xor(blk, &key->key_exp[key->rounds]);
 	for (r = key->rounds - 1; ; --r) {
@@ -184,36 +179,35 @@ void vial_aes_block_decrypt(struct vial_aes_block *blk, const struct vial_aes_ke
 		/* SubBytes */
 		for (i = 0; i < 4; ++i)
 			for (j = 0; j < 4; ++j)
-				tblk_bytes[4 * i + j] = rsbox[blk_bytes[4 * ((i - j) & 3) + j]];
+				tblk_bytes[4 * i + j] = rsbox[blk_bytes[4 * i + ((j - i) & 3)]];
 		/* AddRoundKey */
 		block_xor(&tblk, &key->key_exp[r]);
 		if (r == 0)
 			break;
 		/* MixColumns */
-		for (i = 0; i < 4; ++i) {
-			READ_BE32(x1, tblk_bytes + 4 * i);
-			GDBL4(x2, x1, m);
-			GDBL4(x4, x2, m);
-			GDBL4(x8, x4, m);
-			m = x8 ^ (x4 & 0xFF00FF00) ^ (x2 & 0xFFFF0000) ^ (x1 & 0x00FFFFFF); /* 14 11 13 9 */
-			m ^= m >> 16;
-			m ^= m >> 8;
-			blk_bytes[4 * i + 0] = m;
-			m = x8 ^ (x4 & 0x00FF00FF) ^ (x2 & 0x00FFFF00) ^ (x1 & 0xFF00FFFF); /* 9 14 11 13 */
-			m ^= m >> 16;
-			m ^= m >> 8;
-			blk_bytes[4 * i + 1] = m;
-			m = x8 ^ (x4 & 0xFF00FF00) ^ (x2 & 0x0000FFFF) ^ (x1 & 0xFFFF00FF); /* 13 9 14 11 */
-			m ^= m >> 16;
-			m ^= m >> 8;
-			blk_bytes[4 * i + 2] = m;
-			m = x8 ^ (x4 & 0x00FF00FF) ^ (x2 & 0xFF0000FF) ^ (x1 & 0xFFFFFF00); /* 11 13 9 14 */
-			m ^= m >> 16;
-			m ^= m >> 8;
-			blk_bytes[4 * i + 3] = m;
-		}
+		a1 = tblk.words[0];
+		GDBL4(a2, a1, m);
+		GDBL4(a4, a2, m);
+		GDBL4(a8, a4, m);
+		b1 = tblk.words[1];
+		GDBL4(b2, b1, m);
+		GDBL4(b4, b2, m);
+		GDBL4(b8, b4, m);
+		c1 = tblk.words[2];
+		GDBL4(c2, c1, m);
+		GDBL4(c4, c2, m);
+		GDBL4(c8, c4, m);
+		d1 = tblk.words[3];
+		GDBL4(d2, d1, m);
+		GDBL4(d4, d2, m);
+		GDBL4(d8, d4, m);
+		m = a8 ^ b8 ^ c8 ^ d8;
+		blk->words[0] = m ^ a4 ^ a2 ^ b2 ^ b1 ^ c4 ^ c1 ^ d1; /* 14 11 13 9 */
+		blk->words[1] = m ^ a1 ^ b4 ^ b2 ^ c2 ^ c1 ^ d4 ^ d1; /* 9 14 11 13 */
+		blk->words[2] = m ^ a4 ^ a1 ^ b1 ^ c4 ^ c2 ^ d2 ^ d1; /* 13 9 14 11 */
+		blk->words[3] = m ^ a2 ^ a1 ^ b4 ^ b1 ^ c1 ^ d4 ^ d2; /* 11 13 9 14 */
 	}
-	*blk = tblk;
+	transpose16(blk_bytes, tblk_bytes);
 }
 
 void vial_aes_cmac_init(struct vial_aes_cmac *self, const struct vial_aes_key *key)
