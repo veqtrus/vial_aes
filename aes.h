@@ -91,7 +91,7 @@ void vial_aes_cmac_final(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_le
 
 /**
  * Computes a CMAC(OMAC1) tag for the given data.
- * Prvided for convenience when a small amount of data needs to be authentaicated.
+ * Provided for convenience when a small amount of data needs to be authenticated.
  */
 void vial_aes_cmac_tag(const struct vial_aes_key *key, uint8_t *tag, size_t tag_len, const uint8_t *src, size_t len);
 
@@ -114,19 +114,16 @@ enum vial_aes_error vial_aes_key_init(struct vial_aes_key *self, unsigned keybit
 
 /**
  * Initialises AES encryption/decryption state.
- * For EAX mode use `vial_aes_init_eax()`.
- * A unique 16 byte initialisation vector (IV) is required for CTR mode.
- * A random IV is required for CBC mode.
+ * A random 16 byte initialisation vector is required for CBC mode.
+ * A unique nonce is required for CTR mode (up to 16 bytes).
+ * EAX mode: The pointer to the CMAC state
+ * (which will be initialised internally)
+ * must be set before calling this function.
+ * A unique nonce must be provided for each new message,
+ * e.g. by incrementing a randomly initialised counter.
  */
-enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode, const struct vial_aes_key *key, const uint8_t *iv);
-
-/**
- * Initialises AES encryption/decryption state for EAX mode.
- * A CMAC state must be provided for use by the authenticated encryption algorithm (will be initialised internally).
- * A unique nonce must be provided for each new message, e.g. by incrementing a randomly initialised counter.
- */
-enum vial_aes_error vial_aes_init_eax(struct vial_aes *self, struct vial_aes_cmac *cmac,
-	const struct vial_aes_key *key, const uint8_t *nonce, size_t len);
+enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode,
+	const struct vial_aes_key *key, const uint8_t *iv, size_t len);
 
 /**
  * Sets the associated data to be authenticated alongside the encrypted message.

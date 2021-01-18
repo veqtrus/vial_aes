@@ -13,7 +13,7 @@ int main()
 {
 	struct vial_aes_key key;
 	struct vial_aes_block block;
-	key.rounds = 10;
+	vial_aes_key_init(&key, 128, (const uint8_t *) "0123456789ABCDEF");
 	clock_t dur = clock();
 	uint64_t tsc = __rdtsc();
 	for (uint32_t i = 0; i < 1000000; ++i)

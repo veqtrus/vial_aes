@@ -48,14 +48,25 @@ static const uint8_t rsbox[256] = {
 	0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d
 };
 
-#define GDBL(n) (((n) << 1) ^ (0x1B & -(const uint8_t)(((n) >> 7) & 1)))
+void vial_aes_increment_be(uint8_t *num, size_t len)
+{
+	if (len == 0) return;
+	do --len; while (++(num[len]) == 0 && len != 0);
+}
 
-#define GDBL4(x2, x1, m) \
-	m = (x1 & 0x80808080) >> 7; /* get msb */ \
-	x2 = (x1 & 0x7F7F7F7F) << 1; \
-	/* xor with 0x1B if msb set */ \
-	m += m << 1; m += m << 3; \
-	x2 ^= m
+static void galois_double_be(uint8_t *dst, const uint8_t *src)
+{
+	const unsigned msb = src[0] >> 7;
+	for (int i = 0; i < VIAL_AES_BLOCK_SIZE - 1; ++i)
+		dst[i] = (src[i] << 1) | (src[i + 1] >> 7);
+	dst[VIAL_AES_BLOCK_SIZE - 1] = src[VIAL_AES_BLOCK_SIZE - 1] << 1;
+	dst[VIAL_AES_BLOCK_SIZE - 1] ^= 135 & -(msb & 1);
+}
+
+static void block_zero(struct vial_aes_block *blk)
+{
+	blk->words[3] = blk->words[2] = blk->words[1] = blk->words[0] = 0;
+}
 
 static void block_xor(struct vial_aes_block *dst, const struct vial_aes_block *src)
 {
@@ -73,6 +84,13 @@ static void transpose16(uint8_t *dst, const uint8_t *src)
 			dst[i * 4 + j] = src[j * 4 + i];
 }
 
+#define GDBL4(x2, x1, m) \
+	m = (x1 & 0x80808080) >> 7; /* get msb */ \
+	x2 = (x1 & 0x7F7F7F7F) << 1; \
+	/* xor with 0x1B if msb set */ \
+	m += m << 1; m += m << 3; \
+	x2 ^= m
+
 static void expand_keys(uint32_t *w, unsigned n, unsigned r)
 {
 	uint8_t blk[VIAL_AES_BLOCK_SIZE];
@@ -87,7 +105,7 @@ static void expand_keys(uint32_t *w, unsigned n, unsigned r)
 			p[6] = sbox[p[3]];
 			p[7] = sbox[p[0]];
 			w[i] ^= w[i - n];
-			c = GDBL(c);
+			c = (c << 1) ^ (0x1B & -(c >> 7));
 		} else if (n > 6 && i % n == 4) {
 			p = (uint8_t *) (w + i - 1);
 			p[4] = sbox[p[0]];
@@ -105,24 +123,14 @@ static void expand_keys(uint32_t *w, unsigned n, unsigned r)
 	}
 }
 
-void vial_aes_increment_be(uint8_t *num, size_t len)
+enum vial_aes_error vial_aes_key_init(struct vial_aes_key *self, unsigned keybits, const uint8_t *key)
 {
-	if (len == 0) return;
-	do --len; while (++(num[len]) == 0 && len != 0);
-}
-
-static void incr_counter(struct vial_aes_block *counter)
-{
-	vial_aes_increment_be((uint8_t *) counter, VIAL_AES_BLOCK_SIZE);
-}
-
-static void galois_double_be(uint8_t *dst, const uint8_t *src)
-{
-	const unsigned msb = src[0] >> 7;
-	for (int i = 0; i < VIAL_AES_BLOCK_SIZE - 1; ++i)
-		dst[i] = (src[i] << 1) | (src[i + 1] >> 7);
-	dst[VIAL_AES_BLOCK_SIZE - 1] = src[VIAL_AES_BLOCK_SIZE - 1] << 1;
-	dst[VIAL_AES_BLOCK_SIZE - 1] ^= 135 & -(msb & 1);
+	if (!(keybits == 128 || keybits == 192 || keybits == 256))
+		return VIAL_AES_ERROR_LENGTH;
+	self->rounds = keybits / 32 + 6;
+	memcpy(&self->key_exp[0], key, keybits / 8);
+	expand_keys(self->key_exp[0].words, keybits / 32, self->rounds + 1);
+	return VIAL_AES_ERROR_NONE;
 }
 
 void vial_aes_block_encrypt(struct vial_aes_block *blk, const struct vial_aes_key *key)
@@ -214,8 +222,8 @@ void vial_aes_cmac_init(struct vial_aes_cmac *self, const struct vial_aes_key *k
 {
 	self->key = key;
 	self->buf_len = 0;
-	memset(&self->mac, 0, VIAL_AES_BLOCK_SIZE);
-	memset(&self->buf, 0, VIAL_AES_BLOCK_SIZE);
+	block_zero(&self->mac);
+	block_zero(&self->buf);
 }
 
 void vial_aes_cmac_update(struct vial_aes_cmac *self, const uint8_t *src, size_t len)
@@ -245,7 +253,7 @@ void vial_aes_cmac_update(struct vial_aes_cmac *self, const uint8_t *src, size_t
 		src += VIAL_AES_BLOCK_SIZE;
 	}
 	self->buf_len = len;
-	memset(&self->buf, 0, VIAL_AES_BLOCK_SIZE);
+	block_zero(&self->buf);
 	memcpy(&self->buf, src, len);
 }
 
@@ -267,8 +275,8 @@ void vial_aes_cmac_final(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_le
 	vial_aes_block_encrypt(&self->mac, self->key);
 	memcpy(tag, &self->mac, tag_len);
 	self->buf_len = 0;
-	memset(&self->mac, 0, VIAL_AES_BLOCK_SIZE);
-	memset(&self->buf, 0, VIAL_AES_BLOCK_SIZE);
+	block_zero(&self->mac);
+	block_zero(&self->buf);
 }
 
 void vial_aes_cmac_tag(const struct vial_aes_key *key, uint8_t *tag, size_t tag_len, const uint8_t *src, size_t len)
@@ -291,7 +299,7 @@ static void aes_ctr_pad(struct vial_aes *self, uint8_t *dst, const uint8_t *src,
 		while (len >= VIAL_AES_BLOCK_SIZE) {
 			self->pad = self->iv;
 			vial_aes_block_encrypt(&self->pad, self->key);
-			incr_counter(&self->iv);
+			vial_aes_increment_be((uint8_t *) &self->iv, VIAL_AES_BLOCK_SIZE);
 			memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
 			block_xor(&blk, &self->pad);
 			memcpy(dst, &blk, VIAL_AES_BLOCK_SIZE);
@@ -303,53 +311,44 @@ static void aes_ctr_pad(struct vial_aes *self, uint8_t *dst, const uint8_t *src,
 			self->pad = self->iv;
 			self->pad_rem = VIAL_AES_BLOCK_SIZE;
 			vial_aes_block_encrypt(&self->pad, self->key);
-			incr_counter(&self->iv);
+			vial_aes_increment_be((uint8_t *) &self->iv, VIAL_AES_BLOCK_SIZE);
 		} else {
 			return;
 		}
 	}
 }
 
-enum vial_aes_error vial_aes_key_init(struct vial_aes_key *self, unsigned keybits, const uint8_t *key)
+enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode,
+	const struct vial_aes_key *key, const uint8_t *iv, size_t len)
 {
-	if (!(keybits == 128 || keybits == 192 || keybits == 256))
-		return VIAL_AES_ERROR_LENGTH;
-	self->rounds = keybits / 32 + 6;
-	memcpy(&self->key_exp[0], key, keybits / 8);
-	expand_keys(self->key_exp[0].words, keybits / 32, self->rounds + 1);
-	return VIAL_AES_ERROR_NONE;
-}
-
-enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode, const struct vial_aes_key *key, const uint8_t *iv)
-{
-	if (mode == VIAL_AES_MODE_EAX)
-		return VIAL_AES_ERROR_CIPHER;
+	const uint8_t zeros[VIAL_AES_BLOCK_SIZE] = {0};
 	self->mode = mode;
 	self->pad_rem = 0;
 	self->key = key;
-	if (iv == NULL) {
-		if (mode != VIAL_AES_MODE_ECB)
+	switch (mode) {
+	case VIAL_AES_MODE_ECB:
+		break;
+	case VIAL_AES_MODE_CBC:
+		if (len != VIAL_AES_BLOCK_SIZE)
 			return VIAL_AES_ERROR_IV;
-		memset(&self->iv, 0, VIAL_AES_BLOCK_SIZE);
-	} else {
 		memcpy(&self->iv, iv, VIAL_AES_BLOCK_SIZE);
+		break;
+	case VIAL_AES_MODE_CTR:
+		if (len > VIAL_AES_BLOCK_SIZE)
+			return VIAL_AES_ERROR_IV;
+		block_zero(&self->iv);
+		memcpy(&self->iv, iv, len);
+		break;
+	case VIAL_AES_MODE_EAX:
+		vial_aes_cmac_init(self->cmac, key);
+		vial_aes_cmac_update(self->cmac, zeros, VIAL_AES_BLOCK_SIZE);
+		vial_aes_cmac_update(self->cmac, iv, len);
+		vial_aes_cmac_final(self->cmac, (uint8_t *) &self->iv, VIAL_AES_BLOCK_SIZE);
+		return vial_aes_auth_data(self, NULL, 0);
+	default:
+		return VIAL_AES_ERROR_CIPHER;
 	}
 	return VIAL_AES_ERROR_NONE;
-}
-
-enum vial_aes_error vial_aes_init_eax(struct vial_aes *self, struct vial_aes_cmac *cmac,
-	const struct vial_aes_key *key, const uint8_t *nonce, size_t len)
-{
-	const uint8_t zeros[VIAL_AES_BLOCK_SIZE] = {0};
-	self->mode = VIAL_AES_MODE_EAX;
-	self->pad_rem = 0;
-	self->key = key;
-	self->cmac = cmac;
-	vial_aes_cmac_init(cmac, key);
-	vial_aes_cmac_update(self->cmac, zeros, VIAL_AES_BLOCK_SIZE);
-	vial_aes_cmac_update(self->cmac, nonce, len);
-	vial_aes_cmac_final(self->cmac, (uint8_t *) &self->iv, VIAL_AES_BLOCK_SIZE);
-	return vial_aes_auth_data(self, NULL, 0);
 }
 
 static void eax_init_mac(struct vial_aes *self)
