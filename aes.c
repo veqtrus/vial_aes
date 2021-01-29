@@ -56,11 +56,10 @@ void vial_aes_increment_be(uint8_t *num, size_t len)
 
 static void galois_double_be(uint8_t *dst, const uint8_t *src)
 {
-	const unsigned msb = src[0] >> 7;
+	const uint8_t msb = src[0] >> 7;
 	for (int i = 0; i < VIAL_AES_BLOCK_SIZE - 1; ++i)
 		dst[i] = (src[i] << 1) | (src[i + 1] >> 7);
-	dst[VIAL_AES_BLOCK_SIZE - 1] = src[VIAL_AES_BLOCK_SIZE - 1] << 1;
-	dst[VIAL_AES_BLOCK_SIZE - 1] ^= 135 & -(msb & 1);
+	dst[VIAL_AES_BLOCK_SIZE - 1] = (src[VIAL_AES_BLOCK_SIZE - 1] << 1) ^ (135 & -msb);
 }
 
 static void block_zero(struct vial_aes_block *blk)
@@ -256,38 +255,31 @@ void vial_aes_cmac_init(struct vial_aes_cmac *self, const struct vial_aes_key *k
 	self->key = key;
 	self->buf_len = 0;
 	block_zero(&self->mac);
-	block_zero(&self->buf);
 }
 
 void vial_aes_cmac_update(struct vial_aes_cmac *self, const uint8_t *src, size_t len)
 {
-	size_t tmp_len;
+	struct vial_aes_block blk;
+	while (len > 0 && self->buf_len < VIAL_AES_BLOCK_SIZE) {
+		((uint8_t *) &self->mac)[self->buf_len++] ^= *src++;
+		len--;
+	}
 	if (len == 0)
 		return;
-	if (self->buf_len < VIAL_AES_BLOCK_SIZE) {
-		tmp_len = VIAL_AES_BLOCK_SIZE - self->buf_len;
-		if (tmp_len > len)
-			tmp_len = len;
-		memcpy(((uint8_t *) &self->buf) + self->buf_len, src, tmp_len);
-		len -= tmp_len;
-		src += tmp_len;
-		self->buf_len += tmp_len;
-		if (len == 0)
-			return;
-	}
 	/* buf_len == 16 */
-	block_xor(&self->mac, &self->buf);
 	vial_aes_block_encrypt(&self->mac, self->key);
 	while (len > VIAL_AES_BLOCK_SIZE) {
-		memcpy(&self->buf, src, VIAL_AES_BLOCK_SIZE);
-		block_xor(&self->mac, &self->buf);
+		memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
+		block_xor(&self->mac, &blk);
 		vial_aes_block_encrypt(&self->mac, self->key);
 		len -= VIAL_AES_BLOCK_SIZE;
 		src += VIAL_AES_BLOCK_SIZE;
 	}
-	self->buf_len = len;
-	block_zero(&self->buf);
-	memcpy(&self->buf, src, len);
+	self->buf_len = 0;
+	while (len > 0) {
+		((uint8_t *) &self->mac)[self->buf_len++] ^= *src++;
+		len--;
+	}
 }
 
 void vial_aes_cmac_final(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_len)
@@ -299,17 +291,15 @@ void vial_aes_cmac_final(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_le
 	if (tag_len > VIAL_AES_BLOCK_SIZE)
 		tag_len = VIAL_AES_BLOCK_SIZE;
 	if (self->buf_len < VIAL_AES_BLOCK_SIZE) {
-		((uint8_t *) &self->buf)[self->buf_len] = 0x80;
-		block_xor(&self->buf, &k2);
+		((uint8_t *) &self->mac)[self->buf_len] ^= 0x80;
+		block_xor(&self->mac, &k2);
 	} else {
-		block_xor(&self->buf, &k1);
+		block_xor(&self->mac, &k1);
 	}
-	block_xor(&self->mac, &self->buf);
 	vial_aes_block_encrypt(&self->mac, self->key);
 	memcpy(tag, &self->mac, tag_len);
 	self->buf_len = 0;
 	block_zero(&self->mac);
-	block_zero(&self->buf);
 }
 
 void vial_aes_cmac_tag(const struct vial_aes_key *key, uint8_t *tag, size_t tag_len, const uint8_t *src, size_t len)

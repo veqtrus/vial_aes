@@ -70,7 +70,7 @@ void vial_aes_block_decrypt(struct vial_aes_block *blk, const struct vial_aes_ke
  */
 struct vial_aes_cmac {
 	const struct vial_aes_key *key;
-	struct vial_aes_block mac, buf;
+	struct vial_aes_block mac;
 	unsigned buf_len;
 };
 
