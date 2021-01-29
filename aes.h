@@ -111,7 +111,7 @@ struct vial_aes_ghash {
  */
 struct vial_aes {
 	enum vial_aes_mode mode;
-	unsigned pad_rem;
+	unsigned pad_used;
 	const struct vial_aes_key *key;
 	struct vial_aes_block iv, pad, auth;
 	struct vial_aes_cmac *cmac;

@@ -398,28 +398,27 @@ static void ghash_final(struct vial_aes_ghash *self, struct vial_aes_block *hash
 static void aes_ctr_pad(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len)
 {
 	struct vial_aes_block blk;
-	for (;;) {
-		while (len > 0 && self->pad_rem > 0) {
-			*dst = *src ^ ((uint8_t *) &self->pad)[VIAL_AES_BLOCK_SIZE - self->pad_rem];
-			self->pad_rem--;
+	while (len > 0 && self->pad_used < VIAL_AES_BLOCK_SIZE) {
+		*dst = *src ^ ((uint8_t *) &self->pad)[self->pad_used++];
+		len--; src++; dst++;
+	}
+	while (len >= VIAL_AES_BLOCK_SIZE) {
+		vial_aes_block_encrypt(self->key, (uint8_t *) &self->pad, (uint8_t *) &self->iv);
+		vial_aes_increment_be((uint8_t *) &self->iv, VIAL_AES_BLOCK_SIZE);
+		memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
+		block_xor(&blk, &self->pad);
+		memcpy(dst, &blk, VIAL_AES_BLOCK_SIZE);
+		len -= VIAL_AES_BLOCK_SIZE;
+		src += VIAL_AES_BLOCK_SIZE;
+		dst += VIAL_AES_BLOCK_SIZE;
+	}
+	if (len > 0) {
+		vial_aes_block_encrypt(self->key, (uint8_t *) &self->pad, (uint8_t *) &self->iv);
+		vial_aes_increment_be((uint8_t *) &self->iv, VIAL_AES_BLOCK_SIZE);
+		self->pad_used = 0;
+		while (len > 0) {
+			*dst = *src ^ ((uint8_t *) &self->pad)[self->pad_used++];
 			len--; src++; dst++;
-		}
-		while (len >= VIAL_AES_BLOCK_SIZE) {
-			vial_aes_block_encrypt(self->key, (uint8_t *) &self->pad, (uint8_t *) &self->iv);
-			vial_aes_increment_be((uint8_t *) &self->iv, VIAL_AES_BLOCK_SIZE);
-			memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
-			block_xor(&blk, &self->pad);
-			memcpy(dst, &blk, VIAL_AES_BLOCK_SIZE);
-			len -= VIAL_AES_BLOCK_SIZE;
-			src += VIAL_AES_BLOCK_SIZE;
-			dst += VIAL_AES_BLOCK_SIZE;
-		}
-		if (len > 0) {
-			self->pad_rem = VIAL_AES_BLOCK_SIZE;
-			vial_aes_block_encrypt(self->key, (uint8_t *) &self->pad, (uint8_t *) &self->iv);
-			vial_aes_increment_be((uint8_t *) &self->iv, VIAL_AES_BLOCK_SIZE);
-		} else {
-			return;
 		}
 	}
 }
@@ -429,7 +428,7 @@ enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode
 {
 	struct vial_aes_block blk = {{0}};
 	self->mode = mode;
-	self->pad_rem = 0;
+	self->pad_used = VIAL_AES_BLOCK_SIZE;
 	self->key = key;
 	switch (mode) {
 	case VIAL_AES_MODE_ECB:
