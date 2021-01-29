@@ -58,13 +58,13 @@ struct vial_aes_key {
  * Encrypts a single AES block in-place.
  * Should not be called directly unless as part of a more elaborate scheme.
  */
-void vial_aes_block_encrypt(struct vial_aes_block *blk, const struct vial_aes_key *key);
+void vial_aes_block_encrypt(const struct vial_aes_key *key, uint8_t *dst, const uint8_t *src);
 
 /**
  * Decrypts a single AES block in-place.
  * Should not be called directly unless as part of a more elaborate scheme.
  */
-void vial_aes_block_decrypt(struct vial_aes_block *blk, const struct vial_aes_key *key);
+void vial_aes_block_decrypt(const struct vial_aes_key *key, uint8_t *dst, const uint8_t *src);
 
 /**
  * Stores the state/context for computing a CMAC (OMAC1) tag
