@@ -20,6 +20,7 @@ struct aes_testcase {
 
 /* SP 800-38A - Recommendation for Block Cipher Modes of Operation: Methods and Techniques */
 /* Bellare M., Rogaway P., Wagner D. (2004) The EAX Mode of Operation */
+/* McGrew D., Viega J. (2004) The Galois/Counter Mode of Operation (GCM) */
 
 static const struct aes_testcase aes_testcases[] = {
 	{
@@ -97,6 +98,36 @@ static const struct aes_testcase aes_testcases[] = {
 		"CB8920F87A6C75CFF39627B56E3ED197C552D295A7CFC46AFC253B4652B1AF3795B124AB6E",
 		"22E7ADD93CFC6393C57EC0B3C17D6B44",
 		"126735FCC320D25A"
+	}, {
+		VIAL_AES_MODE_GCM,
+		"00000000000000000000000000000000",
+		"",
+		"58e2fccefa7e3061367f1d57a4e7455a",
+		"000000000000000000000000",
+		""
+	}, {
+		VIAL_AES_MODE_GCM,
+		"00000000000000000000000000000000",
+		"00000000000000000000000000000000",
+		"0388dace60b6a392f328c2b971b2fe78"
+		"ab6e47d42cec13bdf53a67b21257bddf",
+		"000000000000000000000000",
+		""
+	}, {
+		VIAL_AES_MODE_GCM,
+		"feffe9928665731c6d6a8f9467308308",
+		"d9313225f88406e5a55909c5aff5269a"
+		"86a7a9531534f7da2e4c303d8a318a72"
+		"1c3c0c95956809532fcf0e2449a6b525"
+		"b16aedf5aa0de657ba637b39",
+		"42831ec2217774244b7221b784d0d49c"
+		"e3aa212f2c02a4e035c17e2329aca12e"
+		"21d514b25466931c7d8f6a5aac84aa05"
+		"1ba30b396a0aac973d58e091"
+		"5bc94fbc3221a5db94fae95ae7121a47",
+		"cafebabefacedbaddecaf888",
+		"feedfacedeadbeeffeedfacedeadbeef"
+		"abaddad2"
 	}, { 0 }
 };
 
@@ -168,6 +199,7 @@ static int test_aes(const struct aes_testcase *test)
 {	struct vial_aes_key aes_key;
 	struct vial_aes aes;
 	struct vial_aes_cmac cmac;
+	struct vial_aes_ghash ghash;
 	const char *mode;
 	uint8_t *key, *plain, *cipher, *iv, *auth, *result;
 	const size_t key_size = strlen(test->key) / 2,
@@ -175,7 +207,7 @@ static int test_aes(const struct aes_testcase *test)
 		cipher_size = strlen(test->cipher) / 2,
 		iv_size = test->iv ? strlen(test->iv) / 2 : 0,
 		auth_size = test->auth ? strlen(test->auth) / 2 : 0;
-	bool aead = test->mode == VIAL_AES_MODE_EAX;
+	bool aead = test->mode == VIAL_AES_MODE_EAX || test->mode == VIAL_AES_MODE_GCM;
 	int code = 0;
 	key = decode_hex(test->key);
 	plain = decode_hex(test->plain);
@@ -192,6 +224,8 @@ static int test_aes(const struct aes_testcase *test)
 		mode = "CTR"; break;
 	case VIAL_AES_MODE_EAX:
 		mode = "EAX"; break;
+	case VIAL_AES_MODE_GCM:
+		mode = "GCM"; break;
 	default:
 		code = 31;
 		goto exit;
@@ -202,6 +236,7 @@ static int test_aes(const struct aes_testcase *test)
 		goto exit;
 	}
 	aes.cmac = &cmac;
+	aes.ghash = &ghash;
 	vial_aes_key_init(&aes_key, key_size * 8, key);
 	vial_aes_init(&aes, test->mode, &aes_key, iv, iv_size);
 	if (aead)
