@@ -33,7 +33,8 @@ enum vial_aes_mode {
 	VIAL_AES_MODE_ECB, /**< Encrypts each block independently, should generally not be used */
 	VIAL_AES_MODE_CBC, /**< Provides confidentiality but not integrity, data must be padded */
 	VIAL_AES_MODE_CTR, /**< Stream-cipher-like mode, does not check integrity */
-	VIAL_AES_MODE_EAX /**< Recommended mode, as it provides confidentiality and integrity */
+	VIAL_AES_MODE_EAX, /**< Recommended mode, as it provides confidentiality and integrity */
+	VIAL_AES_MODE_GCM /**< Provides confidentiality and integrity */
 };
 
 /**
@@ -70,7 +71,7 @@ void vial_aes_block_decrypt(struct vial_aes_block *blk, const struct vial_aes_ke
  */
 struct vial_aes_cmac {
 	const struct vial_aes_key *key;
-	struct vial_aes_block mac, buf;
+	struct vial_aes_block mac;
 	unsigned buf_len;
 };
 
@@ -96,6 +97,16 @@ void vial_aes_cmac_final(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_le
 void vial_aes_cmac_tag(const struct vial_aes_key *key, uint8_t *tag, size_t tag_len, const uint8_t *src, size_t len);
 
 /**
+ * Stores the state/context for computing GHASH as part of GCM
+ */
+struct vial_aes_ghash {
+	uint64_t key[2];
+	struct vial_aes_block acc;
+	size_t a_len, c_len;
+	unsigned buf_len;
+};
+
+/**
  * Stores the state/context for performing AES encryption/decryption
  */
 struct vial_aes {
@@ -104,6 +115,7 @@ struct vial_aes {
 	const struct vial_aes_key *key;
 	struct vial_aes_block iv, pad, auth;
 	struct vial_aes_cmac *cmac;
+	struct vial_aes_ghash *ghash;
 };
 
 /**
@@ -116,7 +128,7 @@ enum vial_aes_error vial_aes_key_init(struct vial_aes_key *self, unsigned keybit
  * Initialises AES encryption/decryption state.
  * A random 16 byte initialisation vector is required for CBC mode.
  * A unique nonce is required for CTR mode (up to 16 bytes).
- * EAX mode: The pointer to the CMAC state
+ * EAX/GCM modes: The pointer to the CMAC/GHASH state
  * (which will be initialised internally)
  * must be set before calling this function.
  * A unique nonce must be provided for each new message,
