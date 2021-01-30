@@ -135,7 +135,7 @@ enum vial_aes_error vial_aes_key_init(struct vial_aes_key *self, unsigned keybit
  * e.g. by incrementing a randomly initialised counter.
  */
 enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode,
-	const struct vial_aes_key *key, const uint8_t *iv, size_t len);
+	const struct vial_aes_key *key, const uint8_t *iv, size_t iv_len);
 
 /**
  * Sets the associated data to be authenticated alongside the encrypted message.

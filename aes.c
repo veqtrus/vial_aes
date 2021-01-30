@@ -424,7 +424,7 @@ static void aes_ctr_pad(struct vial_aes *self, uint8_t *dst, const uint8_t *src,
 }
 
 enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode,
-	const struct vial_aes_key *key, const uint8_t *iv, size_t len)
+	const struct vial_aes_key *key, const uint8_t *iv, size_t iv_len)
 {
 	struct vial_aes_block blk = {{0}};
 	self->mode = mode;
@@ -434,24 +434,24 @@ enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode
 	case VIAL_AES_MODE_ECB:
 		break;
 	case VIAL_AES_MODE_CBC:
-		if (len != VIAL_AES_BLOCK_SIZE)
+		if (iv_len != VIAL_AES_BLOCK_SIZE)
 			return VIAL_AES_ERROR_IV;
 		memcpy(&self->iv, iv, VIAL_AES_BLOCK_SIZE);
 		break;
 	case VIAL_AES_MODE_CTR:
-		if (len > VIAL_AES_BLOCK_SIZE)
+		if (iv_len > VIAL_AES_BLOCK_SIZE)
 			return VIAL_AES_ERROR_IV;
 		block_zero(&self->iv);
-		memcpy(&self->iv, iv, len);
+		memcpy(&self->iv, iv, iv_len);
 		break;
 	case VIAL_AES_MODE_EAX:
 		vial_aes_cmac_init(self->cmac, key);
 		vial_aes_cmac_update(self->cmac, (uint8_t *) &blk, VIAL_AES_BLOCK_SIZE);
-		vial_aes_cmac_update(self->cmac, iv, len);
+		vial_aes_cmac_update(self->cmac, iv, iv_len);
 		vial_aes_cmac_final(self->cmac, (uint8_t *) &self->iv, VIAL_AES_BLOCK_SIZE);
 		return vial_aes_auth_data(self, NULL, 0);
 	case VIAL_AES_MODE_GCM:
-		if (len != 12)
+		if (iv_len != 12)
 			return VIAL_AES_ERROR_IV;
 		memcpy(&self->iv, iv, 12);
 		self->iv.words[3] = 0;
