@@ -62,27 +62,36 @@ static void galois_double_be(uint8_t *dst, const uint8_t *src)
 	dst[VIAL_AES_BLOCK_SIZE - 1] = (src[VIAL_AES_BLOCK_SIZE - 1] << 1) ^ (135 & -msb);
 }
 
-static void galois_mult_gcm(const uint64_t *h, uint8_t *x)
+static void galois_mult_gcm(const uint32_t *h, uint8_t *x)
 {
-	uint64_t m,
-		h0 = h[0], h1 = h[1],
-		r0 = 0, r1 = 0;
+	uint32_t m,
+		h0 = h[0], h1 = h[1], h2 = h[2], h3 = h[3],
+		r0 = 0, r1 = 0, r2 = 0, r3 = 0;
 	unsigned i;
 	uint8_t b;
 	for (i = 0; i < 128; ++i) {
 		b = (i & 7) ? (b << 1) : x[i / 8];
-		m = -(b >> 7);
+		m = 0;
+		m -= b >> 7;
 		r0 ^= h0 & m;
 		r1 ^= h1 & m;
-		m = -(h1 & 1);
-		h1 = (h1 >> 1) | (h0 << 63);
-		h0 = (h0 >> 1) ^ (0xE100000000000000 & m);
+		r2 ^= h2 & m;
+		r3 ^= h3 & m;
+		m = -(h3 & 1);
+		h3 = (h3 >> 1) | (h2 << 31);
+		h2 = (h2 >> 1) | (h1 << 31);
+		h1 = (h1 >> 1) | (h0 << 31);
+		h0 = (h0 >> 1) ^ (0xE1000000 & m);
 	}
-	for (i = 8; i --> 0;) {
+	for (i = 4; i --> 0;) {
 		x[i] = r0;
 		r0 >>= 8;
-		x[i + 8] = r1;
+		x[i + 4] = r1;
 		r1 >>= 8;
+		x[i + 8] = r2;
+		r2 >>= 8;
+		x[i + 12] = r3;
+		r3 >>= 8;
 	}
 }
 
@@ -332,13 +341,17 @@ void vial_aes_cmac_tag(const struct vial_aes_key *key, uint8_t *tag, size_t tag_
 
 static void ghash_init(struct vial_aes_ghash *self, const uint8_t *key)
 {
-	uint64_t h0 = 0, h1 = 0;
-	for (int i = 0; i < 8; ++i) {
+	uint32_t h0 = 0, h1 = 0, h2 = 0, h3 = 0;
+	for (int i = 0; i < 4; ++i) {
 		h0 = (h0 << 8) | key[i];
-		h1 = (h1 << 8) | key[i + 8];
+		h1 = (h1 << 8) | key[i + 4];
+		h2 = (h2 << 8) | key[i + 8];
+		h3 = (h3 << 8) | key[i + 12];
 	}
-	self->key[0] = h0;
-	self->key[1] = h1;
+	self->key.words[0] = h0;
+	self->key.words[1] = h1;
+	self->key.words[2] = h2;
+	self->key.words[3] = h3;
 	block_zero(&self->acc);
 	self->a_len = 0;
 	self->c_len = 0;
@@ -355,7 +368,7 @@ static void ghash_update(struct vial_aes_ghash *self, const uint8_t *src, size_t
 		}
 		if (self->buf_len == VIAL_AES_BLOCK_SIZE) {
 			self->buf_len = 0;
-			galois_mult_gcm(self->key, (uint8_t *) &self->acc);
+			galois_mult_gcm(self->key.words, (uint8_t *) &self->acc);
 		} else {
 			return;
 		}
@@ -363,7 +376,7 @@ static void ghash_update(struct vial_aes_ghash *self, const uint8_t *src, size_t
 	while (len >= VIAL_AES_BLOCK_SIZE) {
 		memcpy(&blk, src, VIAL_AES_BLOCK_SIZE);
 		block_xor(&self->acc, &blk);
-		galois_mult_gcm(self->key, (uint8_t *) &self->acc);
+		galois_mult_gcm(self->key.words, (uint8_t *) &self->acc);
 		len -= VIAL_AES_BLOCK_SIZE;
 		src += VIAL_AES_BLOCK_SIZE;
 	}

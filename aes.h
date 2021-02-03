@@ -100,8 +100,7 @@ void vial_aes_cmac_tag(const struct vial_aes_key *key, uint8_t *tag, size_t tag_
  * Stores the state/context for computing GHASH as part of GCM
  */
 struct vial_aes_ghash {
-	uint64_t key[2];
-	struct vial_aes_block acc;
+	struct vial_aes_block key, acc;
 	size_t a_len, c_len;
 	unsigned buf_len;
 };
