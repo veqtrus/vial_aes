@@ -136,12 +136,7 @@ static void transpose_out(const struct vial_aes_block *blk, uint8_t *buf)
 
 #define ROTL(x, n) ((x << n) | (x >> (32 - n)))
 
-#define GDBL4(x2, x1, m) \
-	m = (x1 >> 7) & 0x01010101; /* get msb */ \
-	x2 = (x1 & 0x7F7F7F7F) << 1; \
-	/* xor with 0x1B if msb set */ \
-	m += m << 1; m += m << 3; \
-	x2 ^= m
+#define GDBL4(x) (((x & 0x7F7F7F7FU) << 1) ^ ((0x40404040U - ((x >> 7) & 0x01010101U)) & 0x1B1B1B1BU))
 
 static void expand_keys(struct vial_aes_block *keys, unsigned n, unsigned r)
 {
@@ -188,7 +183,7 @@ enum vial_aes_error vial_aes_key_init(struct vial_aes_key *self, unsigned keybit
 void vial_aes_block_encrypt(const struct vial_aes_key *key, uint8_t *dst, const uint8_t *src)
 {
 	struct vial_aes_block blk;
-	uint32_t m, a1, b1, c1, d1, a2, b2, c2, d2;
+	uint32_t a1, b1, c1, d1, a2, b2, c2, d2;
 	unsigned i, r;
 	transpose_in(&blk, src);
 	for (r = 0; ; ++r) {
@@ -208,10 +203,10 @@ void vial_aes_block_encrypt(const struct vial_aes_key *key, uint8_t *dst, const 
 		if (r == key->rounds - 1)
 			break;
 		/* MixColumns */
-		GDBL4(a2, a1, m);
-		GDBL4(b2, b1, m);
-		GDBL4(c2, c1, m);
-		GDBL4(d2, d1, m);
+		a2 = GDBL4(a1);
+		b2 = GDBL4(b1);
+		c2 = GDBL4(c1);
+		d2 = GDBL4(d1);
 		blk.words[0] = a2 ^ b2 ^ b1 ^ c1 ^ d1; /* 2 3 1 1 */
 		blk.words[1] = a1 ^ b2 ^ c2 ^ c1 ^ d1; /* 1 2 3 1 */
 		blk.words[2] = a1 ^ b1 ^ c2 ^ d2 ^ d1; /* 1 1 2 3 */
@@ -254,18 +249,18 @@ void vial_aes_block_decrypt(const struct vial_aes_key *key, uint8_t *dst, const 
 		if (r == 0)
 			break;
 		/* MixColumns */
-		GDBL4(a2, a1, m);
-		GDBL4(a4, a2, m);
-		GDBL4(a8, a4, m);
-		GDBL4(b2, b1, m);
-		GDBL4(b4, b2, m);
-		GDBL4(b8, b4, m);
-		GDBL4(c2, c1, m);
-		GDBL4(c4, c2, m);
-		GDBL4(c8, c4, m);
-		GDBL4(d2, d1, m);
-		GDBL4(d4, d2, m);
-		GDBL4(d8, d4, m);
+		a2 = GDBL4(a1);
+		b2 = GDBL4(b1);
+		c2 = GDBL4(c1);
+		d2 = GDBL4(d1);
+		a4 = GDBL4(a2);
+		b4 = GDBL4(b2);
+		c4 = GDBL4(c2);
+		d4 = GDBL4(d2);
+		a8 = GDBL4(a4);
+		b8 = GDBL4(b4);
+		c8 = GDBL4(c4);
+		d8 = GDBL4(d4);
 		m = a8 ^ b8 ^ c8 ^ d8;
 		blk.words[0] = m ^ a4 ^ a2 ^ b2 ^ b1 ^ c4 ^ c1 ^ d1; /* 14 11 13 9 */
 		blk.words[1] = m ^ a1 ^ b4 ^ b2 ^ c2 ^ c1 ^ d4 ^ d1; /* 9 14 11 13 */
