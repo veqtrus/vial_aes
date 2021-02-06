@@ -71,7 +71,7 @@ void vial_aes_block_decrypt(const struct vial_aes_key *key, uint8_t *dst, const 
  */
 struct vial_aes_cmac {
 	const struct vial_aes_key *key;
-	struct vial_aes_block mac;
+	struct vial_aes_block k1, mac;
 	unsigned buf_len;
 };
 
