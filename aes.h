@@ -101,7 +101,7 @@ void vial_aes_cmac_tag(const struct vial_aes_key *key, uint8_t *tag, size_t tag_
  */
 struct vial_aes_ghash {
 	struct vial_aes_block key, acc;
-	size_t a_len, c_len;
+	uint64_t a_len, c_len;
 	unsigned buf_len;
 };
 
