@@ -68,7 +68,7 @@ static void galois_mult_gcm(const uint32_t *h, uint8_t *x)
 		h0 = h[0], h1 = h[1], h2 = h[2], h3 = h[3],
 		r0 = 0, r1 = 0, r2 = 0, r3 = 0;
 	unsigned i;
-	uint8_t b;
+	uint8_t b = 0;
 	for (i = 0; i < 128; ++i) {
 		b = (i & 7) ? (b << 1) : x[i / 8];
 		m = 0;

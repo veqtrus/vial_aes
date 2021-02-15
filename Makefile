@@ -1,8 +1,5 @@
-WARNINGS := -pedantic -Wcast-align -Wpointer-arith \
-	-Wbad-function-cast -Wmissing-prototypes -Wstrict-aliasing \
-	-Wmissing-declarations -Winline -Wnested-externs -Wcast-qual \
-	-Wshadow -Wwrite-strings -Wno-unused-parameter -Wfloat-equal
-CFLAGS := -std=c99 -O2 $(WARNINGS)
+WARNINGS ?= -pedantic -Wall
+CFLAGS ?= -std=c99 -O2 $(WARNINGS)
 CC ?= gcc
 
 SOURCES := aes.c
@@ -18,10 +15,10 @@ check: build/test build/bench
 	build/test
 	build/bench
 
-build:
-	mkdir -p build
+build/:
+	mkdir build
 
-build/%: %.c $(SOURCES) build
+build/%: %.c $(SOURCES) build/
 	$(CC) -o $@ $< $(SOURCES) $(CFLAGS)
 
 aes.c: aes.h

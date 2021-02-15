@@ -1,6 +1,6 @@
 {
 	"name": "vial_aes",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"repo": "veqtrus/vial_aes",
 	"description": "Permissively licensed AES implementation in C with ECB, CBC, CTR, GCM, and EAX modes of operation, as well as CMAC (OMAC1)",
 	"keywords": ["cryptography", "aes", "encryption", "mac"],
