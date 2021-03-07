@@ -6,19 +6,19 @@ SOURCES := aes.c
 
 .PHONY: all clean check
 
-all: build/test build/bench
+all: bin/test bin/bench
 
 clean:
-	rm -f build/* *.o
+	rm -f bin/* *.o
 
-check: build/test build/bench
-	build/test
-	build/bench
+check: bin/test bin/bench
+	bin/test
+	bin/bench
 
-build/:
-	mkdir build
+bin/:
+	mkdir bin
 
-build/%: %.c $(SOURCES) build/
+bin/%: %.c $(SOURCES) bin/
 	$(CC) -o $@ $< $(SOURCES) $(CFLAGS)
 
 aes.c: aes.h
