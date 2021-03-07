@@ -18,7 +18,7 @@ check: bin/test bin/bench
 bin/:
 	mkdir bin
 
-bin/%: %.c $(SOURCES) bin/
+bin/%: %.c $(SOURCES) | bin/
 	$(CC) -o $@ $< $(SOURCES) $(CFLAGS)
 
 aes.c: aes.h
