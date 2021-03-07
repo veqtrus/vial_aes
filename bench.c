@@ -12,10 +12,14 @@ https://www.boost.org/LICENSE_1_0.txt
 
 #include "aes.h"
 
+#if defined(_M_AMD64) || defined(__x86_64__) || defined(__amd64__)
 #ifdef _WIN32
 #include <intrin.h>
 #else
 #include <x86intrin.h>
+#endif
+#else
+#define __rdtsc() 0
 #endif
 
 #define BUFFER_SIZE 4096
