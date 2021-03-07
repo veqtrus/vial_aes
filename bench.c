@@ -23,15 +23,16 @@ https://www.boost.org/LICENSE_1_0.txt
 int main()
 {
 	struct vial_aes_key key;
-	struct vial_aes aes;
+	struct vial_aes_ctr aes;
 	uint8_t *buffer = malloc(BUFFER_SIZE);
 	for (unsigned i = 0; i < BUFFER_SIZE; ++i)
 		buffer[i] = i;
 	vial_aes_key_init(&key, 128, (const uint8_t *) "0123456789ABCDEF");
-	vial_aes_init(&aes, VIAL_AES_MODE_CTR, &key, (const uint8_t *) "ABCDEF654321", 12);
+	vial_aes_ctr_init_key(&aes, &key);
+	vial_aes_ctr_reset(&aes, (const uint8_t *) "ABCDEF654321", 12);
 	clock_t dur = clock();
 	uint64_t tsc = __rdtsc();
-	vial_aes_encrypt(&aes, buffer, buffer, BUFFER_SIZE);
+	vial_aes_ctr_crypt(&aes, buffer, buffer, BUFFER_SIZE);
 	tsc = __rdtsc() - tsc;
 	dur = clock() - dur;
 	free(buffer);

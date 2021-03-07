@@ -55,13 +55,19 @@ struct vial_aes_key {
 };
 
 /**
- * Encrypts a single AES block in-place.
+ * Initialises a key structure.
+ * Accepted key lengths are 128, 192, 256 bits.
+ */
+enum vial_aes_error vial_aes_key_init(struct vial_aes_key *self, unsigned keybits, const uint8_t *key);
+
+/**
+ * Encrypts a single AES block.
  * Should not be called directly unless as part of a more elaborate scheme.
  */
 void vial_aes_block_encrypt(const struct vial_aes_key *key, uint8_t *dst, const uint8_t *src);
 
 /**
- * Decrypts a single AES block in-place.
+ * Decrypts a single AES block.
  * Should not be called directly unless as part of a more elaborate scheme.
  */
 void vial_aes_block_decrypt(const struct vial_aes_key *key, uint8_t *dst, const uint8_t *src);
@@ -81,6 +87,11 @@ struct vial_aes_cmac {
 void vial_aes_cmac_init(struct vial_aes_cmac *self, const struct vial_aes_key *key);
 
 /**
+ * Resets the CMAC state. Called by `init` and `final`.
+ */
+void vial_aes_cmac_reset(struct vial_aes_cmac *self);
+
+/**
  * Processes data for authentication
  */
 void vial_aes_cmac_update(struct vial_aes_cmac *self, const uint8_t *src, size_t len);
@@ -91,78 +102,194 @@ void vial_aes_cmac_update(struct vial_aes_cmac *self, const uint8_t *src, size_t
 void vial_aes_cmac_final(struct vial_aes_cmac *self, uint8_t *tag, size_t tag_len);
 
 /**
- * Computes a CMAC(OMAC1) tag for the given data.
+ * Computes a CMAC (OMAC1) tag for the given data.
  * Provided for convenience when a small amount of data needs to be authenticated.
  */
 void vial_aes_cmac_tag(const struct vial_aes_key *key, uint8_t *tag, size_t tag_len, const uint8_t *src, size_t len);
 
-/**
- * Stores the state/context for computing GHASH as part of GCM
- */
-struct vial_aes_ghash {
-	struct vial_aes_block key, acc;
+struct vial_aes_vtable;
+
+struct vial_aes_base {
+	const struct vial_aes_vtable *vtable;
+};
+
+struct vial_aes_vtable {
+	enum vial_aes_mode mode;
+	enum vial_aes_error (*init_key)(struct vial_aes_base *self, const struct vial_aes_key *key);
+	enum vial_aes_error (*reset)(struct vial_aes_base *self, const uint8_t *iv, size_t len);
+	enum vial_aes_error (*auth_update)(struct vial_aes_base *self, const uint8_t *src, size_t len);
+	enum vial_aes_error (*auth_final)(struct vial_aes_base *self, const uint8_t *src, size_t len);
+	enum vial_aes_error (*encrypt)(struct vial_aes_base *self, uint8_t *dst, const uint8_t *src, size_t len);
+	enum vial_aes_error (*decrypt)(struct vial_aes_base *self, uint8_t *dst, const uint8_t *src, size_t len);
+	enum vial_aes_error (*get_tag)(struct vial_aes_base *self, uint8_t *tag);
+	enum vial_aes_error (*check_tag)(struct vial_aes_base *self, const uint8_t *tag);
+};
+
+struct vial_aes_ecb {
+	struct vial_aes_base base;
+	const struct vial_aes_key *key;
+};
+
+enum vial_aes_error vial_aes_ecb_init(struct vial_aes_ecb *self);
+
+enum vial_aes_error vial_aes_ecb_init_key(struct vial_aes_ecb *self, const struct vial_aes_key *key);
+
+enum vial_aes_error vial_aes_ecb_encrypt(struct vial_aes_ecb *self, uint8_t *dst, const uint8_t *src, size_t len);
+
+enum vial_aes_error vial_aes_ecb_decrypt(struct vial_aes_ecb *self, uint8_t *dst, const uint8_t *src, size_t len);
+
+struct vial_aes_cbc {
+	struct vial_aes_base base;
+	const struct vial_aes_key *key;
+	struct vial_aes_block iv;
+};
+
+enum vial_aes_error vial_aes_cbc_init(struct vial_aes_cbc *self);
+
+enum vial_aes_error vial_aes_cbc_init_key(struct vial_aes_cbc *self, const struct vial_aes_key *key);
+
+enum vial_aes_error vial_aes_cbc_reset(struct vial_aes_cbc *self, const uint8_t *iv, size_t len);
+
+enum vial_aes_error vial_aes_cbc_encrypt(struct vial_aes_cbc *self, uint8_t *dst, const uint8_t *src, size_t len);
+
+enum vial_aes_error vial_aes_cbc_decrypt(struct vial_aes_cbc *self, uint8_t *dst, const uint8_t *src, size_t len);
+
+struct vial_aes_ctr {
+	struct vial_aes_base base;
+	const struct vial_aes_key *key;
+	struct vial_aes_block counter, pad;
+	unsigned pad_used;
+};
+
+enum vial_aes_error vial_aes_ctr_init(struct vial_aes_ctr *self);
+
+enum vial_aes_error vial_aes_ctr_init_key(struct vial_aes_ctr *self, const struct vial_aes_key *key);
+
+enum vial_aes_error vial_aes_ctr_reset(struct vial_aes_ctr *self, const uint8_t *iv, size_t len);
+
+enum vial_aes_error vial_aes_ctr_crypt(struct vial_aes_ctr *self, uint8_t *dst, const uint8_t *src, size_t len);
+
+struct vial_aes_eax {
+	struct vial_aes_base base;
+	struct vial_aes_ctr ctr;
+	struct vial_aes_cmac cmac;
+	struct vial_aes_block auth;
+	int auth_done;
+};
+
+enum vial_aes_error vial_aes_eax_init(struct vial_aes_eax *self);
+
+enum vial_aes_error vial_aes_eax_init_key(struct vial_aes_eax *self, const struct vial_aes_key *key);
+
+enum vial_aes_error vial_aes_eax_reset(struct vial_aes_eax *self, const uint8_t *nonce, size_t len);
+
+enum vial_aes_error vial_aes_eax_auth_update(struct vial_aes_eax *self, const uint8_t *src, size_t len);
+
+enum vial_aes_error vial_aes_eax_auth_final(struct vial_aes_eax *self, const uint8_t *src, size_t len);
+
+enum vial_aes_error vial_aes_eax_encrypt(struct vial_aes_eax *self, uint8_t *dst, const uint8_t *src, size_t len);
+
+enum vial_aes_error vial_aes_eax_decrypt(struct vial_aes_eax *self, uint8_t *dst, const uint8_t *src, size_t len);
+
+enum vial_aes_error vial_aes_eax_get_tag(struct vial_aes_eax *self, uint8_t *tag);
+
+enum vial_aes_error vial_aes_eax_check_tag(struct vial_aes_eax *self, const uint8_t *tag);
+
+struct vial_aes_gcm {
+	struct vial_aes_base base;
+	struct vial_aes_ctr ctr;
+	struct vial_aes_block auth, hash_key, hash_acc;
 	uint64_t a_len, c_len;
 	unsigned buf_len;
 };
 
+enum vial_aes_error vial_aes_gcm_init(struct vial_aes_gcm *self);
+
+enum vial_aes_error vial_aes_gcm_init_key(struct vial_aes_gcm *self, const struct vial_aes_key *key);
+
+enum vial_aes_error vial_aes_gcm_reset(struct vial_aes_gcm *self, const uint8_t *nonce, size_t len);
+
+enum vial_aes_error vial_aes_gcm_auth_update(struct vial_aes_gcm *self, const uint8_t *src, size_t len);
+
+enum vial_aes_error vial_aes_gcm_auth_final(struct vial_aes_gcm *self, const uint8_t *src, size_t len);
+
+enum vial_aes_error vial_aes_gcm_encrypt(struct vial_aes_gcm *self, uint8_t *dst, const uint8_t *src, size_t len);
+
+enum vial_aes_error vial_aes_gcm_decrypt(struct vial_aes_gcm *self, uint8_t *dst, const uint8_t *src, size_t len);
+
+enum vial_aes_error vial_aes_gcm_get_tag(struct vial_aes_gcm *self, uint8_t *tag);
+
+enum vial_aes_error vial_aes_gcm_check_tag(struct vial_aes_gcm *self, const uint8_t *tag);
+
 /**
  * Stores the state/context for performing AES encryption/decryption
  */
-struct vial_aes {
-	enum vial_aes_mode mode;
-	unsigned pad_used;
-	const struct vial_aes_key *key;
-	struct vial_aes_block iv, pad, auth;
-	struct vial_aes_cmac *cmac;
-	struct vial_aes_ghash *ghash;
+union vial_aes {
+	struct vial_aes_base base;
+	struct vial_aes_ecb ecb;
+	struct vial_aes_cbc cbc;
+	struct vial_aes_ctr ctr;
+	struct vial_aes_eax eax;
+	struct vial_aes_gcm gcm;
 };
 
-/**
- * Initialises a key structure.
- * Accepted key lengths are 128, 192, 256 bits.
- */
-enum vial_aes_error vial_aes_key_init(struct vial_aes_key *self, unsigned keybits, const uint8_t *key);
+static inline enum vial_aes_error vial_aes_init(union vial_aes *self, enum vial_aes_mode mode)
+{
+	switch (mode) {
+	case VIAL_AES_MODE_ECB:
+		return vial_aes_ecb_init(&self->ecb);
+	case VIAL_AES_MODE_CBC:
+		return vial_aes_cbc_init(&self->cbc);
+	case VIAL_AES_MODE_CTR:
+		return vial_aes_ctr_init(&self->ctr);
+	case VIAL_AES_MODE_EAX:
+		return vial_aes_eax_init(&self->eax);
+	case VIAL_AES_MODE_GCM:
+		return vial_aes_gcm_init(&self->gcm);
+	default:
+		return VIAL_AES_ERROR_CIPHER;
+	}
+}
 
-/**
- * Initialises AES encryption/decryption state.
- * A random 16 byte initialisation vector is required for CBC mode.
- * A unique nonce is required for CTR mode (up to 16 bytes).
- * EAX/GCM modes: The pointer to the CMAC/GHASH state
- * (which will be initialised internally)
- * must be set before calling this function.
- * A unique nonce must be provided for each new message,
- * e.g. by incrementing a randomly initialised counter.
- */
-enum vial_aes_error vial_aes_init(struct vial_aes *self, enum vial_aes_mode mode,
-	const struct vial_aes_key *key, const uint8_t *iv, size_t iv_len);
+static inline enum vial_aes_error vial_aes_init_key(union vial_aes *self, const struct vial_aes_key *key)
+{
+	return self->base.vtable->init_key(&self->base, key);
+}
 
-/**
- * Sets the associated data to be authenticated alongside the encrypted message.
- * Must be provided after each reinitialisation, before encryption/decryption.
- */
-enum vial_aes_error vial_aes_auth_data(struct vial_aes *self, const uint8_t *src, size_t len);
+static inline enum vial_aes_error vial_aes_reset(union vial_aes *self, const uint8_t *iv, size_t len)
+{
+	return self->base.vtable->reset(&self->base, iv, len);
+}
 
-/**
- * Encrypts (part of) a message
- */
-enum vial_aes_error vial_aes_encrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len);
+static inline enum vial_aes_error vial_aes_auth_update(union vial_aes *self, const uint8_t *src, size_t len)
+{
+	return self->base.vtable->auth_update(&self->base, src, len);
+}
 
-/**
- * Decrypts (part of) a message
- */
-enum vial_aes_error vial_aes_decrypt(struct vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len);
+static inline enum vial_aes_error vial_aes_auth_final(union vial_aes *self, const uint8_t *src, size_t len)
+{
+	return self->base.vtable->auth_final(&self->base, src, len);
+}
 
-/**
- * Computes the authentication tag for the processed message.
- * Further data will be authenticated separately.
- */
-enum vial_aes_error vial_aes_get_tag(struct vial_aes *self, uint8_t *tag);
+static inline enum vial_aes_error vial_aes_encrypt(union vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len)
+{
+	return self->base.vtable->encrypt(&self->base, dst, src, len);
+}
 
-/**
- * Verifies the authentication tag for the processed message.
- * Further data will be authenticated separately.
- */
-enum vial_aes_error vial_aes_check_tag(struct vial_aes *self, const uint8_t *tag);
+static inline enum vial_aes_error vial_aes_decrypt(union vial_aes *self, uint8_t *dst, const uint8_t *src, size_t len)
+{
+	return self->base.vtable->decrypt(&self->base, dst, src, len);
+}
+
+static inline enum vial_aes_error vial_aes_get_tag(union vial_aes *self, uint8_t *tag)
+{
+	return self->base.vtable->get_tag(&self->base, tag);
+}
+
+static inline enum vial_aes_error vial_aes_check_tag(union vial_aes *self, const uint8_t *tag)
+{
+	return self->base.vtable->check_tag(&self->base, tag);
+}
 
 #ifdef __cplusplus
 }

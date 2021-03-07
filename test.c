@@ -197,9 +197,7 @@ static void print_hex(const uint8_t *src, size_t len)
 
 static int test_aes(const struct aes_testcase *test)
 {	struct vial_aes_key aes_key;
-	struct vial_aes aes;
-	struct vial_aes_cmac cmac;
-	struct vial_aes_ghash ghash;
+	union vial_aes aes;
 	const char *mode;
 	uint8_t *key, *plain, *cipher, *iv, *auth, *result;
 	const size_t key_size = strlen(test->key) / 2,
@@ -235,12 +233,12 @@ static int test_aes(const struct aes_testcase *test)
 		code = 31;
 		goto exit;
 	}
-	aes.cmac = &cmac;
-	aes.ghash = &ghash;
 	vial_aes_key_init(&aes_key, key_size * 8, key);
-	vial_aes_init(&aes, test->mode, &aes_key, iv, iv_size);
+	vial_aes_init(&aes, test->mode);
+	vial_aes_init_key(&aes, &aes_key);
+	vial_aes_reset(&aes, iv, iv_size);
 	if (aead)
-		vial_aes_auth_data(&aes, auth, auth_size);
+		vial_aes_auth_final(&aes, auth, auth_size);
 	code = vial_aes_encrypt(&aes, result, plain, plain_size);
 	if (code) goto exit;
 	if (aead) {
@@ -255,9 +253,9 @@ static int test_aes(const struct aes_testcase *test)
 		code = 32;
 		goto exit;
 	}
-	vial_aes_init(&aes, test->mode, &aes_key, iv, iv_size);
+	vial_aes_reset(&aes, iv, iv_size);
 	if (aead)
-		vial_aes_auth_data(&aes, auth, auth_size);
+		vial_aes_auth_final(&aes, auth, auth_size);
 	code = vial_aes_decrypt(&aes, result, cipher, plain_size);
 	if (code) goto exit;
 	if (aead) {
