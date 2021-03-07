@@ -30,14 +30,13 @@ This is done with the `vial_aes_key_init()` function and the expansion is stored
 
 ### Initialisation of AES context
 
-The function `vial_aes_init()` is used. For ECB, CBC, and CTR modes you have to supply a pointer
-to your expanded key, and a random 16 byte initialisation vector (IV).
+There are different contexts for each mode and a generic context which can be initialised with any mode.
+The expanded key must then be provided. This can be done as part of initialisation.
 
-For EAX you need to set the pointer to a `struct vial_aes_cmac` before calling `vial_aes_init()`.
-The CMAC context will be initialised internally. The nonce can be of any length.
-
-For GCM you need to set the pointer to a `struct vial_aes_ghash` before calling `vial_aes_init()`.
-The GHASH context will be initialised internally. The nonce must be 12 bytes long.
+In all modes except ECB (which should not generally be used),
+the context must be reset with an initialisation vector (IV) or nonce before processing each message.
+In CBC mode it must be 16 bytes long, in CTR mode it can be up to 16 bytes long,
+in GCM it must 12 bytes long, while in EAX mode it can be of any length.
 
 While the nonce in EAX and GCM does not need to be random, it must never be reused with the same key.
 One approach is to generate a random nonce at the start of the session and then increment it
@@ -57,13 +56,13 @@ you should be using a mode like EAX.
 
 The EAX and GCM modes can be used to authenticate the encrypted message,
 as well as some additional plaintext data. If you need to authenticate such associated data,
-`vial_aes_auth_data()` needs to be called before encryption/decryption.
+`vial_aes_auth_final()` needs to be called before encryption/decryption.
 
 After your message is processed, you must append the tag at the end of the encrypted message,
 or when decrypting, check the received tag. The tag is 16 bytes long (unless truncated,
 which is not recommended for GCM).
 
-After each message you need to reinitialise the context with a new unique nonce.
+After each message you need to reset the context with a new unique nonce.
 
 Alternatively you can compute your own CMAC tags with the respective functions,
 however if you encrypt in CBC mode a different key needs to be used for CMAC.
